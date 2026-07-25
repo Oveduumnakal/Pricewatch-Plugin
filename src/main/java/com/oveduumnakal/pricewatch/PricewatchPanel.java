@@ -30,6 +30,7 @@ import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
 import javax.swing.JScrollPane;
+import javax.swing.JTextArea;
 import javax.swing.ScrollPaneConstants;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
@@ -93,6 +94,8 @@ public class PricewatchPanel extends PluginPanel
 	private final JButton sortButton = new JButton();
 
 	private final JButton compactButton = new JButton();
+
+	private final JButton shareButton = new JButton();
 
 	private final List<Integer> watchedIds = new ArrayList<>();
 
@@ -164,11 +167,16 @@ public class PricewatchPanel extends PluginPanel
 		styleControlButton(compactButton, "Toggle compact rows");
 		compactButton.addActionListener(e -> actions.toggleCompactView());
 
+		styleControlButton(shareButton, "Export or import a share code");
+		shareButton.setText("Share");
+		shareButton.addActionListener(e -> showShareMenu());
+
 		final JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
 
 		buttons.setBackground(ColorScheme.DARK_GRAY_COLOR);
 		buttons.add(sortButton);
 		buttons.add(compactButton);
+		buttons.add(shareButton);
 
 		final JPanel controls = new JPanel(new BorderLayout(4, 0));
 
@@ -548,6 +556,48 @@ public class PricewatchPanel extends PluginPanel
 		menu.add(manage);
 
 		menu.show(anchor, 0, anchor.getHeight());
+	}
+
+	/** Opens the share menu: copy the watchlist out as a code, or paste one in. */
+	private void showShareMenu()
+	{
+		final JPopupMenu menu = new JPopupMenu();
+		final JMenuItem export = new JMenuItem("Copy share code");
+
+		export.addActionListener(e -> showExportDialog());
+
+		final JMenuItem load = new JMenuItem("Import share code...");
+
+		load.addActionListener(e -> showImportDialog());
+
+		menu.add(export);
+		menu.add(load);
+		menu.show(shareButton, 0, shareButton.getHeight());
+	}
+
+	/** Shows the generated code in a selectable field, already selected for copying. */
+	private void showExportDialog()
+	{
+		final JTextArea field = new JTextArea(actions.exportShareCode(), 4, 28);
+
+		field.setLineWrap(true);
+		field.setEditable(false);
+		field.selectAll();
+
+		JOptionPane.showMessageDialog(this, new JScrollPane(field),
+				"Share code — copy this", JOptionPane.PLAIN_MESSAGE);
+	}
+
+	/** Prompts for a code and reports what the plugin made of it. */
+	private void showImportDialog()
+	{
+		final String code = JOptionPane.showInputDialog(this,
+				"Paste a Pricewatch share code. Items you already watch are left as they are.");
+
+		if (code == null)
+			return;
+
+		JOptionPane.showMessageDialog(this, actions.importShareCode(code));
 	}
 
 	/** Opens the category management dialog: create, rename, delete, reorder and auto-categorise. */

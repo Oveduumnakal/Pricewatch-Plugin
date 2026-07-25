@@ -100,6 +100,8 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 	@Inject
 	private WikiRealtimePriceClient wikiPriceClient;
 
+	private WatchlistShareCodec shareCodec;
+
 	private PricewatchPanel panel;
 
 	private NavigationButton navButton;
@@ -191,6 +193,7 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 	@Override
 	protected void startUp()
 	{
+		shareCodec = new WatchlistShareCodec(gson);
 		panel = new PricewatchPanel(itemManager, config, this);
 
 		final BufferedImage icon = ImageUtil.loadImageResource(getClass(), "icon.png");
@@ -231,6 +234,7 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 		mappingsLoaded = false;
 		itemsLoaded = false;
 		lastPriceCacheSave = null;
+		shareCodec = null;
 		navButton = null;
 		panel = null;
 	}
@@ -1058,6 +1062,77 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 			persistWatchedItems();
 			refreshPanel();
 		});
+	}
+
+	/**
+	 * @return a shareable code for the current watchlist and its categories
+	 */
+	@Override
+	public String exportShareCode()
+	{
+		List<WatchlistShareCodec.Entry> entries = watchedItems.values().stream()
+				.map(item -> new WatchlistShareCodec.Entry(
+						item.getItemId(), item.getCategory(), item.isFavorite(), item.isOnOverlay()))
+				.collect(Collectors.toList());
+
+		return shareCodec.encode(new WatchlistShareCodec.Snapshot(1, entries, new ArrayList<>(categories)));
+	}
+
+	/**
+	 * Merges a pasted share code into the current watchlist.
+	 *
+	 * <p>Deliberately a merge rather than a replace: a code is something you paste
+	 * from chat, and having it silently wipe a watchlist you have curated would be
+	 * the worst possible outcome of a misclick. Items already watched keep their own
+	 * category and favourite state.
+	 *
+	 * @param code the pasted token
+	 * @return a user-facing summary of what was imported, or why it was refused
+	 */
+	@Override
+	public String importShareCode(String code)
+	{
+		WatchlistShareCodec.Snapshot snapshot = shareCodec.decode(code);
+		if (snapshot == null)
+			return "That doesn't look like a Pricewatch share code.";
+
+		if (snapshot.getItems().isEmpty())
+			return "That code has no items in it.";
+
+		clientThread.invokeLater(() -> applyImportedList(snapshot));
+
+		return "Importing " + snapshot.getItems().size() + " item(s).";
+	}
+
+	/** Adds every unseen item and category from a decoded snapshot, leaving existing entries alone. */
+	private void applyImportedList(WatchlistShareCodec.Snapshot snapshot)
+	{
+		for (CategoryState imported : snapshot.getCategories())
+		{
+			if (imported == null || imported.getName() == null || imported.getName().trim().isEmpty())
+				continue;
+
+			if (categories.stream().noneMatch(c -> c.getName().equalsIgnoreCase(imported.getName())))
+				categories.add(new CategoryState(imported.getName().trim(), imported.isCollapsed()));
+		}
+
+		for (WatchlistShareCodec.Entry entry : snapshot.getItems())
+		{
+			if (entry == null || watchedItems.containsKey(entry.getId()))
+				continue;
+
+			WatchedItem item = buildItem(entry.getId(), WatchItemMode.WATCH);
+
+			item.setCategory(entry.getCategory());
+			item.setFavorite(entry.isFavorite());
+			item.setOnOverlay(entry.isOnOverlay());
+			watchedItems.put(entry.getId(), item);
+		}
+
+		persistCategories();
+		persistWatchedItems();
+		refreshPanel();
+		refreshGePrices();
 	}
 
 	/** Writes the watchlist to the RS profile config. */

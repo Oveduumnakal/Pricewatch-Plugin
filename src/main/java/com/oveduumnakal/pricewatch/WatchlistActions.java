@@ -109,4 +109,17 @@ interface WatchlistActions
 	 * @param orderedIds every watched item id, in the new order
 	 */
 	void reorderWatchlist(List<Integer> orderedIds);
+
+	/**
+	 * @return a shareable code for the current watchlist and its categories
+	 */
+	String exportShareCode();
+
+	/**
+	 * Merges a pasted share code into the current watchlist.
+	 *
+	 * @param code the pasted token
+	 * @return a user-facing summary of what was imported, or why it was refused
+	 */
+	String importShareCode(String code);
 }
