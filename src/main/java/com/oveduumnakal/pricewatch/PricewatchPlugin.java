@@ -9,6 +9,7 @@ import java.lang.reflect.Type;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -17,6 +18,7 @@ import java.util.Map;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 import javax.inject.Inject;
 import javax.swing.SwingUtilities;
 
@@ -51,9 +53,10 @@ import net.runelite.client.util.ImageUtil;
  * Plugin entry point: owns the watchlist, keeps it fed with live wiki prices,
  * and pushes it into the side panel.
  *
- * <p>This is the phase 1 price spine. The watchlist is seeded from a fixed list
- * of items because there is no way to add one yet; search, categories and the
- * detail view arrive in later phases.
+ * <p>Owns the watchlist, the categories it is grouped into, and the view state
+ * the panel renders it with. The panel never mutates any of it: it calls back
+ * through {@link WatchlistActions} so every change and its persistence happen
+ * here, on the client thread.
  */
 @Slf4j
 @PluginDescriptor(
@@ -106,7 +109,14 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 	/** An item being looked at without being watched: priced like the rest, never persisted. */
 	private WatchedItem previewItem;
 
-	private final ViewState viewState = new ViewState(SortMode.MANUAL, false, false);
+	private final ViewState viewState = new ViewState(
+			SortMode.MANUAL, false, false, new ArrayList<>(), false, false);
+
+	private final List<CategoryState> categories = new ArrayList<>();
+
+	private boolean favoritesCollapsed;
+
+	private boolean uncategorizedCollapsed;
 
 	private Map<Integer, WikiRealtimePriceClient.ItemMapping> itemMappings = new HashMap<>();
 
@@ -145,6 +155,21 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 		long avg;
 		long highTime;
 		long lowTime;
+	}
+
+	private static final Type CATEGORIES_TYPE = new TypeToken<CategoryData>(){}.getType();
+
+	/**
+	 * Serializable snapshot of the category definitions and the collapsed state of the
+	 * two special groups. Package-private so {@code PersistedSchemaSnapshotTest} can
+	 * guard its shape; any field change fails the schema snapshot until it is
+	 * regenerated and explained in the PR.
+	 */
+	static class CategoryData
+	{
+		List<CategoryState> categories;
+		boolean favoritesCollapsed;
+		boolean uncategorizedCollapsed;
 	}
 
 	/**
@@ -198,6 +223,9 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 		clientToolbar.removeNavigation(navButton);
 
 		watchedItems.clear();
+		categories.clear();
+		favoritesCollapsed = false;
+		uncategorizedCollapsed = false;
 		previewItem = null;
 		itemMappings = new HashMap<>();
 		mappingsLoaded = false;
@@ -222,6 +250,7 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 
 		itemsLoaded = true;
 		loadViewState();
+		loadCategories();
 		loadPersistedItems();
 		hydratePriceCache();
 		refreshPanel();
@@ -705,6 +734,303 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 		return Boolean.TRUE.equals(value);
 	}
 
+	/**
+	 * Assigns an item to a category; a blank or null name clears it to Uncategorised.
+	 *
+	 * @param itemId   the item
+	 * @param category the category name, or {@code null} to clear it
+	 */
+	@Override
+	public void setItemCategory(int itemId, String category)
+	{
+		clientThread.invokeLater(() ->
+		{
+			WatchedItem item = watchedItems.get(itemId);
+			if (item == null)
+				return;
+
+			item.setCategory(category == null || category.trim().isEmpty() ? null : category.trim());
+			persistWatchedItems();
+			refreshPanel();
+		});
+	}
+
+	/**
+	 * Rolls a group up or down and remembers it.
+	 *
+	 * @param groupKey  the group's persistence key
+	 * @param collapsed whether it should be rolled up
+	 */
+	@Override
+	public void setGroupCollapsed(String groupKey, boolean collapsed)
+	{
+		clientThread.invokeLater(() ->
+		{
+			if (CategoryState.FAVORITES_KEY.equals(groupKey))
+			{
+				favoritesCollapsed = collapsed;
+			}
+			else if (CategoryState.UNCATEGORIZED_KEY.equals(groupKey))
+			{
+				uncategorizedCollapsed = collapsed;
+			}
+			else
+			{
+				categories.stream()
+						.filter(c -> c.getName().equals(groupKey))
+						.findFirst()
+						.ifPresent(c -> c.setCollapsed(collapsed));
+			}
+
+			persistCategories();
+			refreshPanel();
+		});
+	}
+
+	/**
+	 * Creates a category, ignoring blanks and case-insensitive duplicates.
+	 *
+	 * @param name the new category's name
+	 */
+	@Override
+	public void createCategory(String name)
+	{
+		clientThread.invokeLater(() ->
+		{
+			String trimmed = name == null ? "" : name.trim();
+			if (trimmed.isEmpty() || categories.stream().anyMatch(c -> c.getName().equalsIgnoreCase(trimmed)))
+				return;
+
+			categories.add(new CategoryState(trimmed, false));
+			persistCategories();
+			refreshPanel();
+		});
+	}
+
+	/**
+	 * Renames a category and re-points its items, ignoring blanks and clashes.
+	 *
+	 * @param oldName the category to rename
+	 * @param newName its new name
+	 */
+	@Override
+	public void renameCategory(String oldName, String newName)
+	{
+		clientThread.invokeLater(() ->
+		{
+			String trimmed = newName == null ? "" : newName.trim();
+			if (trimmed.isEmpty())
+				return;
+
+			CategoryState target = null;
+			for (CategoryState c : categories)
+			{
+				if (c.getName().equals(oldName))
+					target = c;
+				else if (c.getName().equalsIgnoreCase(trimmed))
+					return;
+			}
+
+			if (target == null)
+				return;
+
+			target.setName(trimmed);
+			watchedItems.values().stream()
+					.filter(item -> oldName.equals(item.getCategory()))
+					.forEach(item -> item.setCategory(trimmed));
+
+			persistCategories();
+			persistWatchedItems();
+			refreshPanel();
+		});
+	}
+
+	/**
+	 * Deletes a category, moving its items to Uncategorised.
+	 *
+	 * @param name the category to delete
+	 */
+	@Override
+	public void deleteCategory(String name)
+	{
+		clientThread.invokeLater(() ->
+		{
+			if (!categories.removeIf(c -> c.getName().equals(name)))
+				return;
+
+			watchedItems.values().stream()
+					.filter(item -> name.equals(item.getCategory()))
+					.forEach(item -> item.setCategory(null));
+
+			persistCategories();
+			persistWatchedItems();
+			refreshPanel();
+		});
+	}
+
+	/**
+	 * Moves a category to a new position in the ordered list.
+	 *
+	 * @param name        the category to move
+	 * @param targetIndex where it should end up, clamped into range
+	 */
+	@Override
+	public void reorderCategory(String name, int targetIndex)
+	{
+		clientThread.invokeLater(() ->
+		{
+			int from = -1;
+			for (int i = 0; i < categories.size(); i++)
+			{
+				if (categories.get(i).getName().equals(name))
+				{
+					from = i;
+					break;
+				}
+			}
+
+			if (from < 0)
+				return;
+
+			int to = Math.max(0, Math.min(targetIndex, categories.size() - 1));
+			if (to == from)
+				return;
+
+			categories.add(to, categories.remove(from));
+			persistCategories();
+			refreshPanel();
+		});
+	}
+
+	/**
+	 * Auto-assigns watched items to wiki-derived categories (see
+	 * {@link ItemCategoryClassifier}), creating any that are missing. Non-destructive
+	 * unless {@code includeCategorized} is set: by default only uncategorised items
+	 * are touched, so manual assignments survive.
+	 *
+	 * @param includeCategorized also re-categorise items that already have a category
+	 * @return a user-facing summary of what will change
+	 */
+	@Override
+	public String autoCategorize(boolean includeCategorized)
+	{
+		long willChange = watchedItems.values().stream()
+				.filter(item -> inAutoCategorizeScope(item, includeCategorized))
+				.filter(item -> !ItemCategoryClassifier.classify(item.getName()).equals(item.getCategory()))
+				.count();
+
+		clientThread.invokeLater(() -> applyAutoCategorize(includeCategorized));
+
+		if (willChange == 0)
+			return "Nothing to categorise — everything already matches.";
+
+		return "Auto-categorised " + willChange + " item(s).";
+	}
+
+	/** @return whether this item is eligible for an auto-categorize run. */
+	private boolean inAutoCategorizeScope(WatchedItem item, boolean includeCategorized)
+	{
+		return includeCategorized || item.getCategory() == null || item.getCategory().trim().isEmpty();
+	}
+
+	/** Classifies each in-scope item on the client thread, creating categories as needed. */
+	private void applyAutoCategorize(boolean includeCategorized)
+	{
+		boolean changed = false;
+		List<CategoryState> created = new ArrayList<>();
+		for (WatchedItem item : watchedItems.values())
+		{
+			if (!inAutoCategorizeScope(item, includeCategorized))
+				continue;
+
+			String target = ItemCategoryClassifier.classify(item.getName());
+			if (target.equals(item.getCategory()))
+				continue;
+
+			if (categories.stream().noneMatch(c -> c.getName().equalsIgnoreCase(target)))
+			{
+				CategoryState category = new CategoryState(target, false);
+				categories.add(category);
+				created.add(category);
+			}
+
+			item.setCategory(target);
+			changed = true;
+		}
+
+		if (changed)
+		{
+			orderGeneratedCategories(created);
+			persistCategories();
+			persistWatchedItems();
+			refreshPanel();
+		}
+	}
+
+	/**
+	 * Orders a run's generated categories alphabetically after any pre-existing
+	 * (manually ordered) ones, then keeps "Other" at the very end.
+	 */
+	private void orderGeneratedCategories(List<CategoryState> created)
+	{
+		categories.removeAll(created);
+		created.stream()
+				.sorted(Comparator.comparing(CategoryState::getName, String.CASE_INSENSITIVE_ORDER))
+				.forEach(categories::add);
+
+		List<CategoryState> other = categories.stream()
+				.filter(c -> ItemCategoryClassifier.OTHER.equalsIgnoreCase(c.getName()))
+				.collect(Collectors.toList());
+
+		categories.removeAll(other);
+		categories.addAll(other);
+	}
+
+	/** Serializes the category definitions and group collapsed state to per-profile config. */
+	private void persistCategories()
+	{
+		CategoryData data = new CategoryData();
+
+		data.categories = new ArrayList<>(categories);
+		data.favoritesCollapsed = favoritesCollapsed;
+		data.uncategorizedCollapsed = uncategorizedCollapsed;
+
+		configManager.setRSProfileConfiguration(
+				PricewatchConfig.GROUP, PricewatchConfig.KEY_CATEGORIES, gson.toJson(data, CATEGORIES_TYPE));
+	}
+
+	/** Restores the category definitions and group collapsed state from per-profile config. */
+	private void loadCategories()
+	{
+		categories.clear();
+		favoritesCollapsed = false;
+		uncategorizedCollapsed = false;
+
+		String saved = configManager.getRSProfileConfiguration(
+				PricewatchConfig.GROUP, PricewatchConfig.KEY_CATEGORIES);
+		if (saved == null || saved.trim().isEmpty())
+			return;
+
+		try
+		{
+			CategoryData data = gson.fromJson(saved.trim(), CATEGORIES_TYPE);
+			if (data == null)
+				return;
+
+			if (data.categories != null)
+				data.categories.stream()
+						.filter(c -> c != null && c.getName() != null && !c.getName().trim().isEmpty())
+						.forEach(categories::add);
+
+			favoritesCollapsed = data.favoritesCollapsed;
+			uncategorizedCollapsed = data.uncategorizedCollapsed;
+		}
+		catch (JsonSyntaxException e)
+		{
+			log.warn("Failed to parse persisted category JSON; ignoring", e);
+		}
+	}
+
 	/** Writes the watchlist to the RS profile config. */
 	private void persistWatchedItems()
 	{
@@ -847,7 +1173,8 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 		final List<WatchedItem> snapshot = new ArrayList<>(watchedItems.values());
 		final WatchedItem preview = previewItem;
 		final ViewState view = new ViewState(
-				viewState.getSortMode(), viewState.isSortReversed(), viewState.isCompact());
+				viewState.getSortMode(), viewState.isSortReversed(), viewState.isCompact(),
+				new ArrayList<>(categories), favoritesCollapsed, uncategorizedCollapsed);
 
 		SwingUtilities.invokeLater(() -> panel.rebuild(snapshot, preview, view));
 	}

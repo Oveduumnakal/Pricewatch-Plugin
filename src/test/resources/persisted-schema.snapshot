@@ -5,6 +5,15 @@ class CachedPrice {
   low: long
   lowTime: long
 }
+class CategoryData {
+  categories: List<CategoryState>
+  favoritesCollapsed: boolean
+  uncategorizedCollapsed: boolean
+}
+class CategoryState {
+  collapsed: boolean
+  name: String
+}
 class PersistedItem {
   category: String
   favorite: boolean

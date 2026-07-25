@@ -52,6 +52,7 @@ public class PersistedSchemaSnapshotTest
 	private static final Class<?>[] ROOTS = {
 			PricewatchPlugin.PersistedItem.class,
 			PricewatchPlugin.CachedPrice.class,
+			PricewatchPlugin.CategoryData.class,
 	};
 
 	@Test

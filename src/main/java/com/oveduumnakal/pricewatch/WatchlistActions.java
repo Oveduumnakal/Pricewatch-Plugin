@@ -46,4 +46,58 @@ interface WatchlistActions
 
 	/** Switches the compact row layout on or off. */
 	void toggleCompactView();
+
+	/**
+	 * Assigns an item to a category.
+	 *
+	 * @param itemId   the item
+	 * @param category the category name, or {@code null} to clear it
+	 */
+	void setItemCategory(int itemId, String category);
+
+	/**
+	 * Rolls a group up or down.
+	 *
+	 * @param groupKey  the group's persistence key
+	 * @param collapsed whether it should be rolled up
+	 */
+	void setGroupCollapsed(String groupKey, boolean collapsed);
+
+	/**
+	 * Creates a category.
+	 *
+	 * @param name the new category's name
+	 */
+	void createCategory(String name);
+
+	/**
+	 * Renames a category and re-points its items.
+	 *
+	 * @param oldName the category to rename
+	 * @param newName its new name
+	 */
+	void renameCategory(String oldName, String newName);
+
+	/**
+	 * Deletes a category, moving its items to Uncategorised.
+	 *
+	 * @param name the category to delete
+	 */
+	void deleteCategory(String name);
+
+	/**
+	 * Moves a category to a new position in the ordered list.
+	 *
+	 * @param name        the category to move
+	 * @param targetIndex where it should end up
+	 */
+	void reorderCategory(String name, int targetIndex);
+
+	/**
+	 * Auto-assigns watched items to wiki-derived categories.
+	 *
+	 * @param includeCategorized also re-categorise items that already have a category
+	 * @return a user-facing summary of what will change
+	 */
+	String autoCategorize(boolean includeCategorized);
 }
