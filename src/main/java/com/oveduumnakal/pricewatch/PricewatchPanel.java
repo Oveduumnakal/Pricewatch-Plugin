@@ -13,14 +13,14 @@ import java.awt.Font;
 import java.awt.GridLayout;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.function.IntConsumer;
-import java.util.function.ObjIntConsumer;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.JButton;
 import javax.swing.JLabel;
+import javax.swing.JMenuItem;
 import javax.swing.JPanel;
+import javax.swing.JPopupMenu;
 import javax.swing.JScrollPane;
 import javax.swing.ScrollPaneConstants;
 import javax.swing.SwingConstants;
@@ -40,9 +40,10 @@ import net.runelite.http.api.item.ItemPrice;
  * The side panel: a search field that adds items to the watchlist, and one row
  * per watched item showing its icon, name and latest prices.
  *
- * <p>List management (add, remove, preview) is delegated to the plugin through
- * the callbacks supplied to the constructor; the plugin pushes data back via
- * {@link #rebuild}. All methods run on the Swing EDT.
+ * <p>List management is delegated to the plugin through {@link WatchlistActions};
+ * the plugin pushes data back via {@link #rebuild}. The filter is the one piece
+ * of view state the panel owns outright, since nothing outside it cares.
+ * All methods run on the Swing EDT.
  */
 public class PricewatchPanel extends PluginPanel
 {
@@ -62,15 +63,17 @@ public class PricewatchPanel extends PluginPanel
 
 	private static final String FLAT_HEX = "#a0a0a0";
 
+	private static final Color STAR_GOLD = new Color(0xf6, 0xd8, 0x73);
+
 	private final ItemManager itemManager;
 
 	private final PricewatchConfig config;
 
-	private final ObjIntConsumer<WatchItemMode> onAddItem;
-
-	private final IntConsumer onRemoveItem;
+	private final WatchlistActions actions;
 
 	private final IconTextField searchField = new IconTextField();
+
+	private final IconTextField filterField = new IconTextField();
 
 	private final JPanel searchResults = new JPanel();
 
@@ -78,25 +81,32 @@ public class PricewatchPanel extends PluginPanel
 
 	private final JLabel empty = new JLabel("Search to add an item", SwingConstants.CENTER);
 
+	private final JButton sortButton = new JButton();
+
+	private final JButton compactButton = new JButton();
+
 	private final List<Integer> watchedIds = new ArrayList<>();
+
+	private List<WatchedItem> lastItems = new ArrayList<>();
+
+	private WatchedItem lastPreview;
+
+	private ViewState lastView = new ViewState(SortMode.MANUAL, false, false);
 
 	/**
 	 * Builds the empty panel.
 	 *
-	 * @param itemManager  the client's item manager, used for icons and search
-	 * @param config       the plugin settings driving the price line
-	 * @param onAddItem    called with the item id and the mode to add it in
-	 * @param onRemoveItem called with the item id to stop watching
+	 * @param itemManager the client's item manager, used for icons and search
+	 * @param config      the plugin settings driving the price line
+	 * @param actions     what the panel calls back into when the user changes something
 	 */
-	public PricewatchPanel(ItemManager itemManager, PricewatchConfig config,
-			ObjIntConsumer<WatchItemMode> onAddItem, IntConsumer onRemoveItem)
+	public PricewatchPanel(ItemManager itemManager, PricewatchConfig config, WatchlistActions actions)
 	{
 		super(false);
 
 		this.itemManager = itemManager;
 		this.config = config;
-		this.onAddItem = onAddItem;
-		this.onRemoveItem = onRemoveItem;
+		this.actions = actions;
 
 		setLayout(new BorderLayout());
 		setBorder(new EmptyBorder(8, 8, 8, 8));
@@ -107,8 +117,93 @@ public class PricewatchPanel extends PluginPanel
 
 		empty.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 
-		add(buildSearchHeader(), BorderLayout.NORTH);
+		add(buildHeader(), BorderLayout.NORTH);
 		add(buildScrollingList(), BorderLayout.CENTER);
+	}
+
+	/** @return the search field, results dropdown, and the filter/sort/compact controls. */
+	private JPanel buildHeader()
+	{
+		final JPanel header = new JPanel(new BorderLayout());
+
+		header.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		header.setBorder(new EmptyBorder(0, 0, 6, 0));
+		header.add(buildSearchHeader(), BorderLayout.NORTH);
+		header.add(buildControls(), BorderLayout.SOUTH);
+
+		return header;
+	}
+
+	/** @return the filter box with the sort and compact buttons beside it. */
+	private JPanel buildControls()
+	{
+		filterField.setIcon(IconTextField.Icon.SEARCH);
+		filterField.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		filterField.setHoverBackgroundColor(ColorScheme.DARK_GRAY_HOVER_COLOR);
+		filterField.setMinimumSize(new Dimension(0, 24));
+		filterField.setPreferredSize(new Dimension(0, 24));
+		filterField.addClearListener(this::redraw);
+		filterField.getDocument().addDocumentListener(new FilterListener());
+
+		styleControlButton(sortButton, "Sort the watchlist");
+		sortButton.addActionListener(e -> showSortMenu());
+
+		styleControlButton(compactButton, "Toggle compact rows");
+		compactButton.addActionListener(e -> actions.toggleCompactView());
+
+		final JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
+
+		buttons.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		buttons.add(sortButton);
+		buttons.add(compactButton);
+
+		final JPanel controls = new JPanel(new BorderLayout(4, 0));
+
+		controls.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		controls.setBorder(new EmptyBorder(6, 0, 0, 0));
+		controls.add(filterField, BorderLayout.CENTER);
+		controls.add(buttons, BorderLayout.EAST);
+
+		return controls;
+	}
+
+	/** Applies the shared look to one of the small header buttons. */
+	private static void styleControlButton(JButton button, String tooltip)
+	{
+		button.setPreferredSize(new Dimension(60, 24));
+		button.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		button.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		button.setFont(FontManager.getRunescapeSmallFont());
+		button.setFocusPainted(false);
+		button.setBorder(BorderFactory.createLineBorder(ColorScheme.MEDIUM_GRAY_COLOR));
+		button.setToolTipText(tooltip);
+		button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+	}
+
+	/** Opens the sort-mode menu, with the active mode's direction offered as a toggle. */
+	private void showSortMenu()
+	{
+		final JPopupMenu menu = new JPopupMenu();
+
+		for (SortMode mode : SortMode.values())
+		{
+			final JMenuItem entry = new JMenuItem(mode.toString());
+
+			entry.addActionListener(e -> actions.setSortMode(mode));
+			menu.add(entry);
+		}
+
+		if (lastView.getSortMode() != SortMode.MANUAL)
+		{
+			final JMenuItem reverse = new JMenuItem(
+					lastView.isSortReversed() ? "Undo reverse" : "Reverse order");
+
+			reverse.addActionListener(e -> actions.toggleSortReversed());
+			menu.addSeparator();
+			menu.add(reverse);
+		}
+
+		menu.show(sortButton, 0, sortButton.getHeight());
 	}
 
 	/** @return the search field with its results dropdown beneath it. */
@@ -127,14 +222,13 @@ public class PricewatchPanel extends PluginPanel
 		searchResults.setBorder(new EmptyBorder(4, 0, 4, 0));
 		searchResults.setVisible(false);
 
-		final JPanel header = new JPanel(new BorderLayout());
+		final JPanel search = new JPanel(new BorderLayout());
 
-		header.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		header.setBorder(new EmptyBorder(0, 0, 6, 0));
-		header.add(searchField, BorderLayout.NORTH);
-		header.add(searchResults, BorderLayout.CENTER);
+		search.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		search.add(searchField, BorderLayout.NORTH);
+		search.add(searchResults, BorderLayout.CENTER);
 
-		return header;
+		return search;
 	}
 
 	/** @return the scrolling watchlist, anchored to the top of its viewport. */
@@ -161,26 +255,44 @@ public class PricewatchPanel extends PluginPanel
 	 * @param items   the watched items, in display order
 	 * @param preview the item being previewed without being watched, or {@code null}
 	 */
-	public void rebuild(List<WatchedItem> items, WatchedItem preview)
+	public void rebuild(List<WatchedItem> items, WatchedItem preview, ViewState view)
+	{
+		lastItems = items;
+		lastPreview = preview;
+		lastView = view;
+
+		redraw();
+	}
+
+	/** Re-renders the rows from the last data pushed in, applying the current filter. */
+	private void redraw()
 	{
 		list.removeAll();
 		watchedIds.clear();
-		items.forEach(item -> watchedIds.add(item.getItemId()));
+		lastItems.forEach(item -> watchedIds.add(item.getItemId()));
+
+		sortButton.setText(sortButtonText());
+		compactButton.setText(lastView.isCompact() ? "Full" : "Compact");
 
 		final PriceLineOptions options = new PriceLineOptions(config);
+		final List<WatchedItem> shown = WatchlistOrder.arrange(
+				lastItems, lastView.getSortMode(), lastView.isSortReversed(), filterField.getText());
 
-		if (preview != null)
+		if (lastPreview != null)
 		{
 			list.add(sectionLabel("Preview"));
-			list.add(buildRow(preview, options, true));
+			list.add(buildRow(lastPreview, options, true));
 			list.add(Box.createVerticalStrut(6));
 			list.add(sectionLabel("Watchlist"));
 		}
 
-		if (items.isEmpty())
+		if (shown.isEmpty())
+		{
+			empty.setText(lastItems.isEmpty() ? "Search to add an item" : "Nothing matches that filter");
 			list.add(empty);
+		}
 
-		for (WatchedItem item : items)
+		for (WatchedItem item : shown)
 		{
 			list.add(buildRow(item, options, false));
 			list.add(Box.createVerticalStrut(2));
@@ -188,6 +300,17 @@ public class PricewatchPanel extends PluginPanel
 
 		list.revalidate();
 		list.repaint();
+	}
+
+	/** @return the sort button's label: the mode, with an arrow when its direction is flipped. */
+	private String sortButtonText()
+	{
+		final SortMode mode = lastView.getSortMode();
+
+		if (mode == SortMode.MANUAL)
+			return mode.toString();
+
+		return mode + (mode.descending(lastView.isSortReversed()) ? " v" : " ^");
 	}
 
 	/** @return a small heading used to separate the preview entry from the watchlist. */
@@ -208,7 +331,7 @@ public class PricewatchPanel extends PluginPanel
 		final JPanel row = new JPanel(new BorderLayout(6, 0));
 
 		row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		row.setBorder(new EmptyBorder(4, 4, 4, 4));
+		row.setBorder(new EmptyBorder(lastView.isCompact() ? 2 : 4, 4, lastView.isCompact() ? 2 : 4, 4));
 
 		final JLabel icon = new JLabel();
 
@@ -225,7 +348,7 @@ public class PricewatchPanel extends PluginPanel
 		name.setFont(FontManager.getRunescapeSmallFont());
 		EllipsisText.set(name, item.getName());
 
-		final String line = priceText(item, options);
+		final String line = lastView.isCompact() ? null : priceText(item, options);
 		final JPanel text = new JPanel(new GridLayout(line == null ? 1 : 2, 1));
 
 		text.setBackground(ColorScheme.DARKER_GRAY_COLOR);
@@ -259,15 +382,24 @@ public class PricewatchPanel extends PluginPanel
 		{
 			final JButton add = smallButton("+", ADD_GREEN, "Add to watchlist");
 
-			add.addActionListener(e -> onAddItem.accept(WatchItemMode.WATCH, item.getItemId()));
+			add.addActionListener(e -> actions.addWatchedItem(WatchItemMode.WATCH, item.getItemId()));
 			buttons.add(add);
 
 			return buttons;
 		}
 
+		final boolean starred = item.isFavorite();
+		final JButton star = smallButton(starred ? "★" : "☆",
+				starred ? STAR_GOLD : ColorScheme.MEDIUM_GRAY_COLOR,
+				starred ? "Remove from favourites" : "Add to favourites");
+
+		star.addActionListener(e -> actions.setFavorite(item.getItemId(), !starred));
+
 		final JButton remove = smallButton("×", REMOVE_RED, "Remove from watchlist");
 
-		remove.addActionListener(e -> onRemoveItem.accept(item.getItemId()));
+		remove.addActionListener(e -> actions.removeWatchedItem(item.getItemId()));
+
+		buttons.add(star);
 		buttons.add(remove);
 
 		return buttons;
@@ -360,7 +492,7 @@ public class PricewatchPanel extends PluginPanel
 	/** Hands a chosen search result to the plugin and clears the search field. */
 	private void pick(int itemId, WatchItemMode mode)
 	{
-		onAddItem.accept(mode, itemId);
+		actions.addWatchedItem(mode, itemId);
 		searchField.setText("");
 		searchResults.setVisible(false);
 	}
@@ -536,6 +668,28 @@ public class PricewatchPanel extends PluginPanel
 			return ColorScheme.MEDIUM_GRAY_COLOR;
 
 		return item.hasLivePrices() ? ColorScheme.GRAND_EXCHANGE_PRICE : ColorScheme.MEDIUM_GRAY_COLOR;
+	}
+
+	/** Re-renders the watchlist on every edit to the filter field. */
+	private final class FilterListener implements DocumentListener
+	{
+		@Override
+		public void insertUpdate(DocumentEvent e)
+		{
+			redraw();
+		}
+
+		@Override
+		public void removeUpdate(DocumentEvent e)
+		{
+			redraw();
+		}
+
+		@Override
+		public void changedUpdate(DocumentEvent e)
+		{
+			redraw();
+		}
 	}
 
 	/** Re-runs the search on every edit to the search field. */

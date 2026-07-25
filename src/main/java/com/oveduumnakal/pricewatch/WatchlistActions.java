@@ -1,0 +1,49 @@
+/*
+ * Copyright (c) 2026, Oveduumnakal
+ * All rights reserved.
+ */
+package com.oveduumnakal.pricewatch;
+
+/**
+ * Everything the panel can ask the plugin to do. The panel never mutates the
+ * watchlist itself: it renders what it is given and calls back here, so all
+ * state changes and persistence stay on the client thread in one place.
+ */
+interface WatchlistActions
+{
+	/**
+	 * Adds an item to the watchlist, or sets it as the preview entry.
+	 *
+	 * @param mode   whether to watch the item or only preview it
+	 * @param itemId the item
+	 */
+	void addWatchedItem(WatchItemMode mode, int itemId);
+
+	/**
+	 * Removes an item from the watchlist.
+	 *
+	 * @param itemId the item to stop watching
+	 */
+	void removeWatchedItem(int itemId);
+
+	/**
+	 * Stars or unstars an item.
+	 *
+	 * @param itemId   the item
+	 * @param favorite whether it should be a favourite
+	 */
+	void setFavorite(int itemId, boolean favorite);
+
+	/**
+	 * Changes how the list is ordered.
+	 *
+	 * @param mode the new sort mode
+	 */
+	void setSortMode(SortMode mode);
+
+	/** Flips the current sort mode's direction. */
+	void toggleSortReversed();
+
+	/** Switches the compact row layout on or off. */
+	void toggleCompactView();
+}
