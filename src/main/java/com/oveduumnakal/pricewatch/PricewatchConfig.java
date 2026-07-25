@@ -24,6 +24,9 @@ public interface PricewatchConfig extends Config
 {
 	String GROUP = "pricewatch";
 
+	String KEY_WATCHED_ITEMS = "watchedItems";
+	String KEY_PRICE_CACHE = "priceCache";
+
 	String KEY_PRICE_REFRESH_SECONDS = "priceRefreshSeconds";
 
 	/** Top-level panel behaviour: how often prices refresh, and global toggles. */
