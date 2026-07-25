@@ -11,6 +11,7 @@ import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.GridLayout;
+import java.awt.Point;
 import java.awt.event.ActionListener;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
@@ -31,6 +32,7 @@ import javax.swing.JPopupMenu;
 import javax.swing.JScrollPane;
 import javax.swing.ScrollPaneConstants;
 import javax.swing.SwingConstants;
+import javax.swing.SwingUtilities;
 import javax.swing.border.EmptyBorder;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
@@ -93,6 +95,9 @@ public class PricewatchPanel extends PluginPanel
 	private final JButton compactButton = new JButton();
 
 	private final List<Integer> watchedIds = new ArrayList<>();
+
+	/** Where each rendered row sits, so a drop point can be resolved back to an item. */
+	private final List<RowRef> rowRefs = new ArrayList<>();
 
 	private List<WatchedItem> lastItems = new ArrayList<>();
 
@@ -277,6 +282,7 @@ public class PricewatchPanel extends PluginPanel
 	{
 		list.removeAll();
 		watchedIds.clear();
+		rowRefs.clear();
 		lastItems.forEach(item -> watchedIds.add(item.getItemId()));
 
 		sortButton.setText(sortButtonText());
@@ -310,7 +316,10 @@ public class PricewatchPanel extends PluginPanel
 
 			for (WatchedItem item : group.getItems())
 			{
-				list.add(buildRow(item, options, false));
+				final JPanel row = buildRow(item, options, false);
+
+				rowRefs.add(new RowRef(row, item.getItemId(), group.getKey()));
+				list.add(row);
 				list.add(Box.createVerticalStrut(2));
 			}
 
@@ -373,15 +382,6 @@ public class PricewatchPanel extends PluginPanel
 		row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		row.setBorder(new EmptyBorder(lastView.isCompact() ? 2 : 4, 4, lastView.isCompact() ? 2 : 4, 4));
 
-		final JLabel icon = new JLabel();
-
-		icon.setPreferredSize(new Dimension(ICON_WIDTH, ICON_WIDTH));
-		icon.setHorizontalAlignment(SwingConstants.CENTER);
-
-		final AsyncBufferedImage image = itemManager.getImage(item.getItemId(), 1, item.isStackable());
-
-		image.addTo(icon);
-
 		final JLabel name = new JLabel();
 
 		name.setForeground(Color.WHITE);
@@ -404,11 +404,81 @@ public class PricewatchPanel extends PluginPanel
 			text.add(prices);
 		}
 
-		row.add(icon, BorderLayout.WEST);
+		row.add(buildRowLeading(item, isPreview), BorderLayout.WEST);
 		row.add(text, BorderLayout.CENTER);
 		row.add(buildRowButtons(item, isPreview), BorderLayout.EAST);
 
 		return row;
+	}
+
+	/** @return the item's icon, loaded asynchronously into a fixed-size label. */
+	private JLabel buildRowIcon(WatchedItem item)
+	{
+		final JLabel icon = new JLabel();
+
+		icon.setPreferredSize(new Dimension(ICON_WIDTH, ICON_WIDTH));
+		icon.setHorizontalAlignment(SwingConstants.CENTER);
+
+		final AsyncBufferedImage image = itemManager.getImage(item.getItemId(), 1, item.isStackable());
+
+		image.addTo(icon);
+
+		return icon;
+	}
+
+	/**
+	 * @return the row's leading cluster: the drag handle, when dragging is possible,
+	 *         followed by the item icon
+	 */
+	private JPanel buildRowLeading(WatchedItem item, boolean isPreview)
+	{
+		final JPanel leading = new JPanel(new BorderLayout(2, 0));
+
+		leading.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+
+		if (!isPreview && lastView.getSortMode() == SortMode.MANUAL)
+			leading.add(buildDragHandle(item), BorderLayout.WEST);
+
+		leading.add(buildRowIcon(item), BorderLayout.CENTER);
+
+		return leading;
+	}
+
+	/**
+	 * @return the grip the user drags to reorder. Only offered in manual sort — under
+	 *         any other mode the displayed order is computed, so dragging a row would
+	 *         appear to do nothing
+	 */
+	private JLabel buildDragHandle(WatchedItem item)
+	{
+		final JLabel handle = new JLabel("=", SwingConstants.CENTER);
+
+		handle.setForeground(ColorScheme.MEDIUM_GRAY_COLOR);
+		handle.setFont(FontManager.getRunescapeSmallFont());
+		handle.setToolTipText("Drag onto another row to reorder");
+		handle.setCursor(Cursor.getPredefinedCursor(Cursor.MOVE_CURSOR));
+		handle.setPreferredSize(new Dimension(10, ICON_WIDTH));
+		handle.addMouseListener(new DragListener(item.getItemId(), groupKeyFor(item)));
+
+		return handle;
+	}
+
+	/** @return the group key an item is currently drawn under. */
+	private String groupKeyFor(WatchedItem item)
+	{
+		if (item.isFavorite())
+			return CategoryState.FAVORITES_KEY;
+
+		final String category = item.getCategory();
+
+		if (category == null || category.trim().isEmpty())
+			return CategoryState.UNCATEGORIZED_KEY;
+
+		return lastView.getCategories().stream()
+				.filter(c -> c.getName().equals(category))
+				.findFirst()
+				.map(CategoryState::getName)
+				.orElse(CategoryState.UNCATEGORIZED_KEY);
 	}
 
 	/** @return the trailing button cluster for a row: add for a preview, remove for a watched item. */
@@ -835,6 +905,87 @@ public class PricewatchPanel extends PluginPanel
 			return ColorScheme.MEDIUM_GRAY_COLOR;
 
 		return item.hasLivePrices() ? ColorScheme.GRAND_EXCHANGE_PRICE : ColorScheme.MEDIUM_GRAY_COLOR;
+	}
+
+	/** Where one rendered row sits, so a drop point can be resolved back to an item. */
+	private static final class RowRef
+	{
+		private final JPanel row;
+		private final int itemId;
+		private final String groupKey;
+
+		/**
+		 * @param row      the rendered row component
+		 * @param itemId   the item it shows
+		 * @param groupKey the group it was drawn under
+		 */
+		RowRef(JPanel row, int itemId, String groupKey)
+		{
+			this.row = row;
+			this.itemId = itemId;
+			this.groupKey = groupKey;
+		}
+	}
+
+	/**
+	 * Drags a row onto another to reorder the watchlist, and onto a row in another
+	 * group to move it there.
+	 *
+	 * <p>Only the release point matters — there is no drag ghost and no autoscroll.
+	 * The drop resolves to whichever row sits under the cursor, and the moved item
+	 * lands immediately before it.
+	 */
+	private final class DragListener extends MouseAdapter
+	{
+		private final int itemId;
+		private final String groupKey;
+
+		/**
+		 * @param itemId   the item this handle belongs to
+		 * @param groupKey the group it is currently drawn under
+		 */
+		DragListener(int itemId, String groupKey)
+		{
+			this.itemId = itemId;
+			this.groupKey = groupKey;
+		}
+
+		@Override
+		public void mouseReleased(MouseEvent e)
+		{
+			final RowRef target = rowAt(
+					SwingUtilities.convertPoint((JComponent) e.getSource(), e.getPoint(), list));
+
+			if (target == null || target.itemId == itemId)
+				return;
+
+			if (!target.groupKey.equals(groupKey))
+				actions.setItemCategory(itemId, categoryFor(target.groupKey));
+
+			actions.reorderWatchlist(WatchlistReorder.moveBefore(watchedIds, itemId, target.itemId));
+		}
+	}
+
+	/** @return the rendered row containing a point in the list's coordinate space, or {@code null}. */
+	private RowRef rowAt(Point point)
+	{
+		return rowRefs.stream()
+				.filter(ref -> ref.row.getBounds().contains(point))
+				.findFirst()
+				.orElse(null);
+	}
+
+	/**
+	 * @return the category a group key represents, or {@code null} for the two special
+	 *         groups — dropping into Favourites or Uncategorised clears the category
+	 *         rather than inventing one named after the group
+	 */
+	private static String categoryFor(String groupKey)
+	{
+		if (CategoryState.FAVORITES_KEY.equals(groupKey) || CategoryState.UNCATEGORIZED_KEY.equals(groupKey))
+			return null;
+
+		return groupKey;
 	}
 
 	/** Toggles a group's collapsed state when its header is clicked. */
