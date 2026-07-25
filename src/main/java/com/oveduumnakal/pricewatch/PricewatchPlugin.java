@@ -164,7 +164,7 @@ public class PricewatchPlugin extends Plugin
 	@Override
 	protected void startUp()
 	{
-		panel = new PricewatchPanel(itemManager, this::addWatchedItem, this::removeWatchedItem);
+		panel = new PricewatchPanel(itemManager, config, this::addWatchedItem, this::removeWatchedItem);
 
 		final BufferedImage icon = ImageUtil.loadImageResource(getClass(), "icon.png");
 
@@ -237,7 +237,12 @@ public class PricewatchPlugin extends Plugin
 			return;
 
 		if (PricewatchConfig.KEY_PRICE_REFRESH_SECONDS.equals(event.getKey()))
+		{
 			scheduleRefresh();
+			return;
+		}
+
+		refreshPanel();
 	}
 
 	/**

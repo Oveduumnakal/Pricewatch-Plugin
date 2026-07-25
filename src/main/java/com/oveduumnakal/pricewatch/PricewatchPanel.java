@@ -56,7 +56,15 @@ public class PricewatchPanel extends PluginPanel
 
 	private static final Color REMOVE_RED = new Color(0xc8, 0x4a, 0x42);
 
+	private static final String UP_HEX = "#28c258";
+
+	private static final String DOWN_HEX = "#e3463f";
+
+	private static final String FLAT_HEX = "#a0a0a0";
+
 	private final ItemManager itemManager;
+
+	private final PricewatchConfig config;
 
 	private final ObjIntConsumer<WatchItemMode> onAddItem;
 
@@ -76,15 +84,17 @@ public class PricewatchPanel extends PluginPanel
 	 * Builds the empty panel.
 	 *
 	 * @param itemManager  the client's item manager, used for icons and search
+	 * @param config       the plugin settings driving the price line
 	 * @param onAddItem    called with the item id and the mode to add it in
 	 * @param onRemoveItem called with the item id to stop watching
 	 */
-	public PricewatchPanel(ItemManager itemManager, ObjIntConsumer<WatchItemMode> onAddItem,
-			IntConsumer onRemoveItem)
+	public PricewatchPanel(ItemManager itemManager, PricewatchConfig config,
+			ObjIntConsumer<WatchItemMode> onAddItem, IntConsumer onRemoveItem)
 	{
 		super(false);
 
 		this.itemManager = itemManager;
+		this.config = config;
 		this.onAddItem = onAddItem;
 		this.onRemoveItem = onRemoveItem;
 
@@ -157,10 +167,12 @@ public class PricewatchPanel extends PluginPanel
 		watchedIds.clear();
 		items.forEach(item -> watchedIds.add(item.getItemId()));
 
+		final PriceLineOptions options = new PriceLineOptions(config);
+
 		if (preview != null)
 		{
 			list.add(sectionLabel("Preview"));
-			list.add(buildRow(preview, true));
+			list.add(buildRow(preview, options, true));
 			list.add(Box.createVerticalStrut(6));
 			list.add(sectionLabel("Watchlist"));
 		}
@@ -170,7 +182,7 @@ public class PricewatchPanel extends PluginPanel
 
 		for (WatchedItem item : items)
 		{
-			list.add(buildRow(item, false));
+			list.add(buildRow(item, options, false));
 			list.add(Box.createVerticalStrut(2));
 		}
 
@@ -191,7 +203,7 @@ public class PricewatchPanel extends PluginPanel
 	}
 
 	/** @return one watchlist row: icon on the left, name over a price line, remove button on the right. */
-	private JPanel buildRow(WatchedItem item, boolean isPreview)
+	private JPanel buildRow(WatchedItem item, PriceLineOptions options, boolean isPreview)
 	{
 		final JPanel row = new JPanel(new BorderLayout(6, 0));
 
@@ -213,16 +225,21 @@ public class PricewatchPanel extends PluginPanel
 		name.setFont(FontManager.getRunescapeSmallFont());
 		EllipsisText.set(name, item.getName());
 
-		final JLabel prices = new JLabel(priceText(item));
-
-		prices.setForeground(priceColor(item));
-		prices.setFont(prices.getFont().deriveFont(Font.PLAIN, 11f));
-
-		final JPanel text = new JPanel(new GridLayout(2, 1));
+		final String line = priceText(item, options);
+		final JPanel text = new JPanel(new GridLayout(line == null ? 1 : 2, 1));
 
 		text.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		text.add(name);
-		text.add(prices);
+
+		if (line != null)
+		{
+			final JLabel prices = new JLabel(line);
+
+			prices.setForeground(priceColor(item));
+			prices.setFont(prices.getFont().deriveFont(Font.PLAIN, 11f));
+			prices.setToolTipText(priceTooltip(item, options));
+			text.add(prices);
+		}
 
 		row.add(icon, BorderLayout.WEST);
 		row.add(text, BorderLayout.CENTER);
@@ -348,9 +365,23 @@ public class PricewatchPanel extends PluginPanel
 		searchResults.setVisible(false);
 	}
 
-	/** @return the price line for an item, or why there isn't one. */
-	static String priceText(WatchedItem item)
+	/**
+	 * Builds the price line under an item's name.
+	 *
+	 * <p>Returns {@code null} when the line is switched off entirely, either by
+	 * setting the window to {@link TimeWindow#NONE} or by turning off every column
+	 * — both leave a plain icon and name row.
+	 *
+	 * @param item    the item to describe
+	 * @param options what the line should show
+	 * @return the HTML line, a short explanation when there is no price to show, or
+	 *         {@code null} to omit the line
+	 */
+	static String priceText(WatchedItem item, PriceLineOptions options)
 	{
+		if (options.window == TimeWindow.NONE || !options.anyColumn())
+			return null;
+
 		if (!item.isTradeable())
 			return "Not tradeable";
 
@@ -360,7 +391,142 @@ public class PricewatchPanel extends PluginPanel
 		if (!item.hasPrices())
 			return "Loading...";
 
-		return String.format("High %,d    Low %,d", item.getHighPrice(), item.getLowPrice());
+		final PriceStats stats = statsFor(item, options.window);
+		final boolean live = options.window == TimeWindow.LIVE;
+		final StringBuilder html = new StringBuilder("<html>");
+
+		if (options.high)
+			html.append(cell("H", stats.getHigh(), live ? item.getHighDelta() : 0, options));
+
+		if (options.low)
+			html.append(cell("L", stats.getLow(), live ? item.getLowDelta() : 0, options));
+
+		if (options.avg)
+			html.append(cell("A", stats.getAvg(), live ? item.getAvgDelta() : 0, options));
+
+		if (options.volume)
+			html.append(volumeCell(stats.getVolume()));
+
+		return html.append("</html>").toString();
+	}
+
+	/**
+	 * @return the item's stats for a window, falling back to its current prices when
+	 *         the series behind that window has not been fetched yet
+	 */
+	private static PriceStats statsFor(WatchedItem item, TimeWindow window)
+	{
+		final PriceStats stats = item.getWindowStats().get(window);
+		if (stats != null)
+			return stats;
+
+		return new PriceStats(item.getHighPrice(), item.getLowPrice(), item.getAvgPrice(), 0);
+	}
+
+	/** @return one labelled figure, tinted by its movement when the indicator allows. */
+	private static String cell(String label, long value, int delta, PriceLineOptions options)
+	{
+		final String text = GpFormat.shortValue(value);
+		final String colour = options.colourFor(delta);
+
+		if (colour == null)
+			return label + " " + text + "&nbsp;&nbsp;";
+
+		return label + " <font color='" + colour + "'>" + text + "</font>&nbsp;&nbsp;";
+	}
+
+	/** @return the traded-volume figure, or a dash for a window that carries no volume. */
+	private static String volumeCell(long volume)
+	{
+		return "V " + (volume > 0 ? GpFormat.shortValue(volume) : "&mdash;") + "&nbsp;&nbsp;";
+	}
+
+	/** @return the untruncated figures for the row tooltip. */
+	private static String priceTooltip(WatchedItem item, PriceLineOptions options)
+	{
+		if (!item.hasPrices() || !item.isTradeable())
+			return item.getName();
+
+		final PriceStats stats = statsFor(item, options.window);
+
+		return item.getName() + " — " + options.window.getLongLabel()
+				+ ": high " + GpFormat.fullGp(stats.getHigh())
+				+ ", low " + GpFormat.fullGp(stats.getLow())
+				+ ", avg " + GpFormat.fullGp(stats.getAvg());
+	}
+
+	/**
+	 * What the price line should show: which window's figures, which of the four
+	 * columns, and whether movement is tinted.
+	 */
+	static final class PriceLineOptions
+	{
+		private final TimeWindow window;
+		private final boolean high;
+		private final boolean low;
+		private final boolean avg;
+		private final boolean volume;
+		private final PriceIndicatorMode indicator;
+
+		/**
+		 * Captures the current display settings.
+		 *
+		 * @param config the plugin settings to read
+		 */
+		PriceLineOptions(PricewatchConfig config)
+		{
+			this(config.priceLine(), config.showColHigh(), config.showColLow(),
+					config.showColAvg(), config.showColVolume(), config.priceChangeIndicator());
+		}
+
+		/**
+		 * Explicit constructor, used by the tests.
+		 *
+		 * @param window    which window's figures to show
+		 * @param high      show the high price
+		 * @param low       show the low price
+		 * @param avg       show the average price
+		 * @param volume    show traded volume
+		 * @param indicator when to tint a figure by its movement
+		 */
+		PriceLineOptions(TimeWindow window, boolean high, boolean low, boolean avg, boolean volume,
+				PriceIndicatorMode indicator)
+		{
+			this.window = window;
+			this.high = high;
+			this.low = low;
+			this.avg = avg;
+			this.volume = volume;
+			this.indicator = indicator;
+		}
+
+		/** @return whether any column at all is switched on. */
+		boolean anyColumn()
+		{
+			return high || low || avg || volume;
+		}
+
+		/**
+		 * Picks the tint for a figure that moved by {@code delta} since the last
+		 * refresh: green up, red down, and — under {@link PriceIndicatorMode#ALL}
+		 * only — a neutral grey for a figure that held steady.
+		 *
+		 * @param delta the sign of the movement, or 0 when unchanged
+		 * @return an HTML colour, or {@code null} to leave the figure untinted
+		 */
+		String colourFor(int delta)
+		{
+			if (indicator == PriceIndicatorMode.OFF)
+				return null;
+
+			if (delta > 0)
+				return UP_HEX;
+
+			if (delta < 0)
+				return DOWN_HEX;
+
+			return indicator == PriceIndicatorMode.ALL ? FLAT_HEX : null;
+		}
 	}
 
 	/** @return dimmed text for prices restored from cache, normal text for live ones. */
