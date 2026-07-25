@@ -43,6 +43,7 @@ public interface PricewatchConfig extends Config
 	String KEY_PRICE_CHANGE_INDICATOR = "priceChangeIndicator";
 
 	String KEY_OVERVIEW_PRESET = "overviewPreset";
+	String KEY_PRESSURE_WINDOW = "pressureWindow";
 	String KEY_STALE_PRICE_THRESHOLD = "stalePriceThresholdMinutes";
 
 	String KEY_SHOW_ITEM_VALUES = "showItemValues";
@@ -299,6 +300,18 @@ public interface PricewatchConfig extends Config
 	default int stalePriceThresholdMinutes()
 	{
 		return 60;
+	}
+
+	@ConfigItem(
+			keyName = KEY_PRESSURE_WINDOW,
+			name = "Pressure Window",
+			description = "How far back the buy/sell pressure bar looks",
+			section = detailViewSection,
+			position = 10
+	)
+	default PressureWindow pressureWindow()
+	{
+		return PressureWindow.DAY;
 	}
 
 	@ConfigItem(

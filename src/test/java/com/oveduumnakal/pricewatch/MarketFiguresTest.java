@@ -109,4 +109,32 @@ public class MarketFiguresTest
 	{
 		assertEquals("-", MarketFigures.formatChange(0));
 	}
+
+	@Test
+	public void alchProfitSubtractsTheItemAndBothRunes()
+	{
+		assertEquals(1000 - 600 - 100 - 25, MarketFigures.alchProfit(1000, 600, 100, 5, 5));
+	}
+
+	@Test
+	public void alchProfitIsRoutinelyNegative()
+	{
+		assertEquals(-200, MarketFigures.alchProfit(1000, 1100, 90, 2, 5));
+	}
+
+	@Test
+	public void theTwoAlchSpellsBurnDifferentFireRuneCounts()
+	{
+		assertEquals(5, MarketFigures.HIGH_ALCH_FIRE_RUNES);
+		assertEquals(3, MarketFigures.LOW_ALCH_FIRE_RUNES);
+		assertEquals(2 * 5, MarketFigures.alchProfit(0, 0, 0, 5, 2) * -1);
+	}
+
+	@Test
+	public void signedValuesMarkAProfitExplicitly()
+	{
+		assertEquals("+1,500 gp", MarketFigures.signed(1500));
+		assertEquals("-1,500 gp", MarketFigures.signed(-1500));
+		assertEquals("0 gp", MarketFigures.signed(0));
+	}
 }
