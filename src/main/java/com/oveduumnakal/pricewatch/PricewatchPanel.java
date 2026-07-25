@@ -11,14 +11,21 @@ import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.GridLayout;
+import java.awt.event.ActionListener;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.JButton;
+import javax.swing.JComboBox;
+import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JMenuItem;
+import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
 import javax.swing.JScrollPane;
@@ -91,7 +98,8 @@ public class PricewatchPanel extends PluginPanel
 
 	private WatchedItem lastPreview;
 
-	private ViewState lastView = new ViewState(SortMode.MANUAL, false, false);
+	private ViewState lastView = new ViewState(
+			SortMode.MANUAL, false, false, new ArrayList<>(), false, false);
 
 	/**
 	 * Builds the empty panel.
@@ -275,27 +283,38 @@ public class PricewatchPanel extends PluginPanel
 		compactButton.setText(lastView.isCompact() ? "Full" : "Compact");
 
 		final PriceLineOptions options = new PriceLineOptions(config);
-		final List<WatchedItem> shown = WatchlistOrder.arrange(
-				lastItems, lastView.getSortMode(), lastView.isSortReversed(), filterField.getText());
+		final List<WatchlistGrouping.Group> groups = WatchlistGrouping.group(
+				lastItems, lastView.getCategories(),
+				lastView.isFavoritesCollapsed(), lastView.isUncategorizedCollapsed(),
+				lastView.getSortMode(), lastView.isSortReversed(), filterField.getText());
 
 		if (lastPreview != null)
 		{
 			list.add(sectionLabel("Preview"));
 			list.add(buildRow(lastPreview, options, true));
 			list.add(Box.createVerticalStrut(6));
-			list.add(sectionLabel("Watchlist"));
 		}
 
-		if (shown.isEmpty())
+		if (groups.isEmpty())
 		{
 			empty.setText(lastItems.isEmpty() ? "Search to add an item" : "Nothing matches that filter");
 			list.add(empty);
 		}
 
-		for (WatchedItem item : shown)
+		for (WatchlistGrouping.Group group : groups)
 		{
-			list.add(buildRow(item, options, false));
-			list.add(Box.createVerticalStrut(2));
+			list.add(buildGroupHeader(group));
+
+			if (group.isCollapsed())
+				continue;
+
+			for (WatchedItem item : group.getItems())
+			{
+				list.add(buildRow(item, options, false));
+				list.add(Box.createVerticalStrut(2));
+			}
+
+			list.add(Box.createVerticalStrut(4));
 		}
 
 		list.revalidate();
@@ -311,6 +330,27 @@ public class PricewatchPanel extends PluginPanel
 			return mode.toString();
 
 		return mode + (mode.descending(lastView.isSortReversed()) ? " v" : " ^");
+	}
+
+	/** @return a clickable accordion header that rolls its group up or down. */
+	private JPanel buildGroupHeader(WatchlistGrouping.Group group)
+	{
+		final JPanel header = new JPanel(new BorderLayout());
+
+		header.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		header.setBorder(new EmptyBorder(4, 2, 2, 2));
+		header.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+
+		final JLabel label = new JLabel((group.isCollapsed() ? "+ " : "- ")
+				+ group.getLabel() + "  (" + group.getItems().size() + ")");
+
+		label.setForeground(ColorScheme.BRAND_ORANGE);
+		label.setFont(FontManager.getRunescapeSmallFont());
+
+		header.add(label, BorderLayout.CENTER);
+		header.addMouseListener(new CollapseListener(group));
+
+		return header;
 	}
 
 	/** @return a small heading used to separate the preview entry from the watchlist. */
@@ -395,14 +435,141 @@ public class PricewatchPanel extends PluginPanel
 
 		star.addActionListener(e -> actions.setFavorite(item.getItemId(), !starred));
 
+		final JButton category = smallButton("…", ColorScheme.LIGHT_GRAY_COLOR, "Set category");
+
+		category.addActionListener(e -> showCategoryMenu(category, item));
+
 		final JButton remove = smallButton("×", REMOVE_RED, "Remove from watchlist");
 
 		remove.addActionListener(e -> actions.removeWatchedItem(item.getItemId()));
 
 		buttons.add(star);
+		buttons.add(category);
 		buttons.add(remove);
 
 		return buttons;
+	}
+
+	/** Opens the per-item category picker, with a way into the manage dialog. */
+	private void showCategoryMenu(JButton anchor, WatchedItem item)
+	{
+		final JPopupMenu menu = new JPopupMenu();
+		final JMenuItem clear = new JMenuItem("Uncategorised");
+
+		clear.addActionListener(e -> actions.setItemCategory(item.getItemId(), null));
+		menu.add(clear);
+
+		if (!lastView.getCategories().isEmpty())
+			menu.addSeparator();
+
+		for (CategoryState category : lastView.getCategories())
+		{
+			final String name = category.getName();
+			final JMenuItem entry = new JMenuItem(name.equals(item.getCategory()) ? name + "  ." : name);
+
+			entry.addActionListener(e -> actions.setItemCategory(item.getItemId(), name));
+			menu.add(entry);
+		}
+
+		final JMenuItem manage = new JMenuItem("Manage categories...");
+
+		manage.addActionListener(e -> openManageCategoriesDialog());
+		menu.addSeparator();
+		menu.add(manage);
+
+		menu.show(anchor, 0, anchor.getHeight());
+	}
+
+	/** Opens the category management dialog: create, rename, delete, reorder and auto-categorise. */
+	private void openManageCategoriesDialog()
+	{
+		final List<String> names = lastView.getCategories().stream()
+				.map(CategoryState::getName)
+				.collect(Collectors.toList());
+
+		final JPanel content = new JPanel();
+
+		content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
+
+		final JComboBox<String> picker = new JComboBox<>(names.toArray(new String[0]));
+
+		if (!names.isEmpty())
+			content.add(labelled("Category", picker));
+
+		content.add(buildManageButtons(picker, names));
+
+		JOptionPane.showMessageDialog(this, content, "Manage categories", JOptionPane.PLAIN_MESSAGE);
+	}
+
+	/** @return the action buttons for the manage dialog, operating on the picker's selection. */
+	private JPanel buildManageButtons(JComboBox<String> picker, List<String> names)
+	{
+		final JPanel buttons = new JPanel(new GridLayout(0, 1, 0, 4));
+
+		buttons.add(dialogButton("New category...", e ->
+		{
+			String name = JOptionPane.showInputDialog(this, "Category name");
+
+			if (name != null)
+				actions.createCategory(name);
+		}));
+
+		if (!names.isEmpty())
+		{
+			buttons.add(dialogButton("Rename...", e ->
+			{
+				String selected = (String) picker.getSelectedItem();
+				String name = JOptionPane.showInputDialog(this, "New name for " + selected, selected);
+
+				if (name != null)
+					actions.renameCategory(selected, name);
+			}));
+
+			buttons.add(dialogButton("Delete", e -> actions.deleteCategory((String) picker.getSelectedItem())));
+
+			buttons.add(dialogButton("Move up", e ->
+			{
+				String selected = (String) picker.getSelectedItem();
+
+				actions.reorderCategory(selected, names.indexOf(selected) - 1);
+			}));
+
+			buttons.add(dialogButton("Move down", e ->
+			{
+				String selected = (String) picker.getSelectedItem();
+
+				actions.reorderCategory(selected, names.indexOf(selected) + 1);
+			}));
+		}
+
+		buttons.add(dialogButton("Auto-categorise uncategorised", e ->
+				JOptionPane.showMessageDialog(this, actions.autoCategorize(false))));
+
+		buttons.add(dialogButton("Auto-categorise everything", e ->
+				JOptionPane.showMessageDialog(this, actions.autoCategorize(true))));
+
+		return buttons;
+	}
+
+	/** @return a plain dialog button wired to an action. */
+	private static JButton dialogButton(String text, ActionListener action)
+	{
+		final JButton button = new JButton(text);
+
+		button.addActionListener(action);
+
+		return button;
+	}
+
+	/** @return a label and a component side by side, for the dialog's form rows. */
+	private static JPanel labelled(String text, JComponent field)
+	{
+		final JPanel row = new JPanel(new BorderLayout(6, 0));
+
+		row.add(new JLabel(text), BorderLayout.WEST);
+		row.add(field, BorderLayout.CENTER);
+
+		return row;
 	}
 
 	/** @return a compact bordered button in the given accent colour. */
@@ -668,6 +835,26 @@ public class PricewatchPanel extends PluginPanel
 			return ColorScheme.MEDIUM_GRAY_COLOR;
 
 		return item.hasLivePrices() ? ColorScheme.GRAND_EXCHANGE_PRICE : ColorScheme.MEDIUM_GRAY_COLOR;
+	}
+
+	/** Toggles a group's collapsed state when its header is clicked. */
+	private final class CollapseListener extends MouseAdapter
+	{
+		private final WatchlistGrouping.Group group;
+
+		/**
+		 * @param group the group this header belongs to
+		 */
+		CollapseListener(WatchlistGrouping.Group group)
+		{
+			this.group = group;
+		}
+
+		@Override
+		public void mousePressed(MouseEvent e)
+		{
+			actions.setGroupCollapsed(group.getKey(), !group.isCollapsed());
+		}
 	}
 
 	/** Re-renders the watchlist on every edit to the filter field. */

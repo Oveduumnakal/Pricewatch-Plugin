@@ -28,6 +28,7 @@ public interface PricewatchConfig extends Config
 
 	String KEY_WATCHED_ITEMS = "watchedItems";
 	String KEY_PRICE_CACHE = "priceCache";
+	String KEY_CATEGORIES = "categories";
 	String KEY_SORT_MODE = "sortMode";
 	String KEY_SORT_REVERSED = "sortReversed";
 	String KEY_COMPACT_VIEW = "compactView";
