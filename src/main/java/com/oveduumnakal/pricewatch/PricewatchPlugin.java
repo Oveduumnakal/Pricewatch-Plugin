@@ -39,11 +39,18 @@ import net.runelite.api.Tile;
 import net.runelite.api.TileItem;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GrandExchangeOfferChanged;
+import net.runelite.api.events.GameTick;
 import net.runelite.api.events.ItemDespawned;
 import net.runelite.api.events.ItemSpawned;
 import net.runelite.api.events.MenuOpened;
+import net.runelite.api.events.WidgetClosed;
+import net.runelite.api.events.WidgetLoaded;
 import net.runelite.api.gameval.InterfaceID;
+import net.runelite.api.widgets.JavaScriptCallback;
 import net.runelite.api.widgets.Widget;
+import net.runelite.api.widgets.WidgetPositionMode;
+import net.runelite.api.widgets.WidgetTextAlignment;
+import net.runelite.api.widgets.WidgetType;
 import net.runelite.api.widgets.WidgetUtil;
 import net.runelite.client.Notifier;
 import net.runelite.client.callback.ClientThread;
@@ -105,6 +112,13 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 	private static final float GLOW_MIN_ALPHA = 0.2f;
 
 	private static final float GLOW_MAX_ALPHA = 1f;
+
+	/** The game's small interface font, so the injected GE button matches its surroundings. */
+	private static final int GE_BUTTON_FONT_ID = 495;
+
+	private static final int GE_BUTTON_COLOR = 0xff981f;
+
+	private static final int GE_BUTTON_HOVER_COLOR = 0xffffff;
 
 	/** Config key to detail section, for resolving slot collisions from a change event. */
 	private static final Map<String, DetailSection> SECTION_KEYS = sectionKeys();
@@ -218,6 +232,12 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 	 * item was picked up or dropped — that is Stockpile's business, not this plugin's.
 	 */
 	private final Map<TileItem, Tile> groundItems = new HashMap<>();
+
+	/** The item currently shown on the GE offer screen, or -1 when no offer screen is open. */
+	private int currentGeItem = -1;
+
+	/** The button injected onto the offer screen, or {@code null} when none is present. */
+	private Widget geButton;
 
 	/** Turns cumulative GE offer updates into the discrete buy fills the limit counts. */
 	private final GeOfferTracker geOfferTracker = new GeOfferTracker();
@@ -338,6 +358,8 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 		overlayManager.remove(groundOverlay);
 		overlayManager.remove(highlightOverlay);
 		groundItems.clear();
+		clientThread.invokeLater(this::hideGeButton);
+		currentGeItem = -1;
 
 		clientToolbar.removeNavigation(navButton);
 		SwingUtilities.invokeLater(panel::closePopouts);
@@ -535,6 +557,200 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 		}
 
 		return -1;
+	}
+
+	/**
+	 * Drives the Grand Exchange integration.
+	 *
+	 * <p>Tick-driven because there is no event for "the offer screen now shows a
+	 * different item" — the interface is rebuilt in place, so it has to be polled.
+	 * Only acts when the shown item actually changes, so the widget scan does not run
+	 * its subtree walk needlessly.
+	 *
+	 * <p>Plan §7.2 drops {@code onGameTick}; this is the one branch of it that survives,
+	 * and none of Stockpile's suspension-expiry sweeps come with it.
+	 *
+	 * @param event the client's tick
+	 */
+	@Subscribe
+	public void onGameTick(GameTick event)
+	{
+		final GeIntegrationMode mode = config.geIntegration();
+		final boolean wantButton = mode == GeIntegrationMode.BUTTON || mode == GeIntegrationMode.BOTH;
+
+		if (!wantButton)
+			hideGeButton();
+
+		if (mode == GeIntegrationMode.OFF)
+		{
+			currentGeItem = -1;
+			return;
+		}
+
+		final int item = currentGeOfferItem();
+		if (item != currentGeItem)
+		{
+			currentGeItem = item;
+			hideGeButton();
+
+			if (item > 0 && (mode == GeIntegrationMode.AUTO || mode == GeIntegrationMode.BOTH))
+				openGeItemInPanel(item);
+		}
+
+		if (wantButton && item > 0 && geButton == null)
+			injectGeButton();
+	}
+
+	/**
+	 * Drops the injected button when the offer interface is rebuilt, so the next tick
+	 * injects a fresh one rather than holding a stale widget.
+	 *
+	 * @param event the client's widget load
+	 */
+	@Subscribe
+	public void onWidgetLoaded(WidgetLoaded event)
+	{
+		if (event.getGroupId() == InterfaceID.GE_OFFERS)
+			geButton = null;
+	}
+
+	/**
+	 * Clears the integration's state when the offer interface closes.
+	 *
+	 * @param event the client's widget close
+	 */
+	@Subscribe
+	public void onWidgetClosed(WidgetClosed event)
+	{
+		if (event.getGroupId() != InterfaceID.GE_OFFERS)
+			return;
+
+		currentGeItem = -1;
+		geButton = null;
+	}
+
+	/** Hides and forgets the injected button, if one is on the offer interface. */
+	private void hideGeButton()
+	{
+		if (geButton == null)
+			return;
+
+		geButton.setHidden(true);
+		geButton = null;
+	}
+
+	/** @return the item on the visible offer setup or details screen, or -1 when neither is open. */
+	private int currentGeOfferItem()
+	{
+		final int setup = itemInGeContainer(InterfaceID.GeOffers.SETUP);
+
+		return setup > 0 ? setup : itemInGeContainer(InterfaceID.GeOffers.DETAILS);
+	}
+
+	/** @return the first item id in the given container's subtree, or -1 when it is hidden or absent. */
+	private int itemInGeContainer(int componentId)
+	{
+		final Widget container = client.getWidget(componentId);
+		if (container == null || container.isHidden())
+			return -1;
+
+		return scanForItem(container);
+	}
+
+	/** @return the first real item id found anywhere under this widget, or -1. */
+	private int scanForItem(Widget widget)
+	{
+		if (widget == null)
+			return -1;
+
+		if (widget.getItemId() > 0 && isRealItem(widget.getItemId()))
+			return widget.getItemId();
+
+		final Widget[][] groups = {
+				widget.getStaticChildren(), widget.getDynamicChildren(), widget.getNestedChildren(),
+		};
+
+		for (Widget[] group : groups)
+		{
+			if (group == null)
+				continue;
+
+			for (Widget child : group)
+			{
+				int id = scanForItem(child);
+				if (id > 0)
+					return id;
+			}
+		}
+
+		return -1;
+	}
+
+	/**
+	 * @param itemId the id to check
+	 * @return whether it resolves to a real item. Empty offer slots are backed by
+	 *         placeholder items whose composition name is the literal string "null",
+	 *         and opening a preview for one of those would be nonsense
+	 */
+	private boolean isRealItem(int itemId)
+	{
+		final String name = itemManager.getItemComposition(itemId).getName();
+
+		return name != null && !name.isEmpty() && !"null".equalsIgnoreCase(name);
+	}
+
+	/**
+	 * Shows the offer's item in the panel: the detail view when it is watched, a
+	 * view-only preview when it is not.
+	 *
+	 * @param itemId the item on the offer screen
+	 */
+	private void openGeItemInPanel(int itemId)
+	{
+		if (itemId <= 0)
+			return;
+
+		final int canonicalId = itemManager.canonicalize(itemId);
+
+		if (watchedItems.containsKey(canonicalId))
+			SwingUtilities.invokeLater(() -> panel.openDetail(canonicalId));
+		else
+			addWatchedItem(WatchItemMode.PREVIEW, canonicalId);
+
+		if (config.geFocusPanel())
+			SwingUtilities.invokeLater(() -> clientToolbar.openPanel(navButton));
+	}
+
+	/** Injects a native-looking "View in Pricewatch" button onto the visible offer container. */
+	private void injectGeButton()
+	{
+		Widget container = client.getWidget(InterfaceID.GeOffers.SETUP);
+		if (container == null || container.isHidden())
+			container = client.getWidget(InterfaceID.GeOffers.DETAILS);
+
+		if (container == null || container.isHidden())
+			return;
+
+		final Widget button = container.createChild(-1, WidgetType.TEXT);
+
+		button.setText("View in Pricewatch");
+		button.setFontId(GE_BUTTON_FONT_ID);
+		button.setTextColor(GE_BUTTON_COLOR);
+		button.setTextShadowed(true);
+		button.setXPositionMode(WidgetPositionMode.ABSOLUTE_RIGHT);
+		button.setXTextAlignment(WidgetTextAlignment.RIGHT);
+		button.setOriginalX(10);
+		button.setOriginalY(10);
+		button.setOriginalWidth(120);
+		button.setOriginalHeight(18);
+		button.setHasListener(true);
+		button.setAction(0, "View in Pricewatch");
+		button.setOnOpListener((JavaScriptCallback) e -> openGeItemInPanel(currentGeItem));
+		button.setOnMouseOverListener((JavaScriptCallback) e -> button.setTextColor(GE_BUTTON_HOVER_COLOR));
+		button.setOnMouseLeaveListener((JavaScriptCallback) e -> button.setTextColor(GE_BUTTON_COLOR));
+		button.revalidate();
+
+		geButton = button;
 	}
 
 	/**

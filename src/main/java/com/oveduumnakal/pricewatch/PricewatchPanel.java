@@ -337,8 +337,12 @@ public class PricewatchPanel extends PluginPanel
 		refreshPopouts();
 	}
 
-	/** Opens the detail view for an item and asks the plugin for its history. */
-	private void openDetail(int itemId)
+	/**
+	 * Opens the detail view for an item and asks the plugin for its history.
+	 *
+	 * @param itemId the item to show
+	 */
+	public void openDetail(int itemId)
 	{
 		detailItemId = itemId;
 		actions.requestDetailData(itemId);

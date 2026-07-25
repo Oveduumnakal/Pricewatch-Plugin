@@ -59,6 +59,9 @@ public interface PricewatchConfig extends Config
 
 	String KEY_ALERT_STYLE = "alertStyle";
 
+	String KEY_GE_INTEGRATION = "geIntegration";
+	String KEY_GE_FOCUS_PANEL = "geFocusPanel";
+
 	String KEY_HIGHLIGHT_WATCHED_ITEMS = "highlightWatchedItems";
 	String KEY_HIGHLIGHT_COLOR = "highlightColor";
 	String KEY_GLOW_EFFECT = "glowEffect";
@@ -119,11 +122,19 @@ public interface PricewatchConfig extends Config
 	)
 	String highlightSection = "highlight";
 
+	/** Tying the panel to whatever offer is open on the Grand Exchange. */
+	@ConfigSection(
+			name = "GE Integration",
+			description = "Link the panel to the open Grand Exchange offer",
+			position = 6
+	)
+	String geIntegrationSection = "geIntegration";
+
 	/** The right-click menu entry that adds or removes an item from the watchlist. */
 	@ConfigSection(
 			name = "Context Menu",
 			description = "The right-click option for watching an item",
-			position = 6
+			position = 7
 	)
 	String contextMenuSection = "contextMenu";
 
@@ -410,6 +421,32 @@ public interface PricewatchConfig extends Config
 	default boolean screenOverlayOnTop()
 	{
 		return false;
+	}
+
+	@ConfigItem(
+			keyName = KEY_GE_INTEGRATION,
+			name = "GE Integration",
+			description = "Off; a \"View in Pricewatch\" button on the offer screen; auto-open the offer's item "
+					+ "in the panel; or both. Defaults to Off because Stockpile injects a button onto the same "
+					+ "screen, and running both would put two buttons in the same corner.",
+			section = geIntegrationSection,
+			position = 0
+	)
+	default GeIntegrationMode geIntegration()
+	{
+		return GeIntegrationMode.OFF;
+	}
+
+	@ConfigItem(
+			keyName = KEY_GE_FOCUS_PANEL,
+			name = "Focus the Panel",
+			description = "Open and focus the side panel when an offer's item is shown",
+			section = geIntegrationSection,
+			position = 1
+	)
+	default boolean geFocusPanel()
+	{
+		return true;
 	}
 
 	@ConfigItem(
