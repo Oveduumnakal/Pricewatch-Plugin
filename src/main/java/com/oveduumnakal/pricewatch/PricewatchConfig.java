@@ -42,6 +42,9 @@ public interface PricewatchConfig extends Config
 	String KEY_SHOW_COL_VOLUME = "showColVolume";
 	String KEY_PRICE_CHANGE_INDICATOR = "priceChangeIndicator";
 
+	String KEY_OVERVIEW_PRESET = "overviewPreset";
+	String KEY_STALE_PRICE_THRESHOLD = "stalePriceThresholdMinutes";
+
 	String KEY_SHOW_ITEM_VALUES = "showItemValues";
 	String KEY_SHOW_MARKET_INFO = "showMarketInfo";
 	String KEY_SHOW_PRICE_OVERVIEW = "showPriceOverview";
@@ -271,6 +274,31 @@ public interface PricewatchConfig extends Config
 	default SectionSlot showAlerts()
 	{
 		return SectionSlot.EIGHTH;
+	}
+
+	@ConfigItem(
+			keyName = KEY_OVERVIEW_PRESET,
+			name = "Overview Windows",
+			description = "Which time windows the price overview grid shows as rows",
+			section = detailViewSection,
+			position = 8
+	)
+	default OverviewPreset overviewPreset()
+	{
+		return OverviewPreset.STANDARD;
+	}
+
+	@Range(min = 1)
+	@ConfigItem(
+			keyName = KEY_STALE_PRICE_THRESHOLD,
+			name = "Stale After (min)",
+			description = "How old a last-traded time may be before it is dimmed as stale",
+			section = detailViewSection,
+			position = 9
+	)
+	default int stalePriceThresholdMinutes()
+	{
+		return 60;
 	}
 
 	@ConfigItem(
