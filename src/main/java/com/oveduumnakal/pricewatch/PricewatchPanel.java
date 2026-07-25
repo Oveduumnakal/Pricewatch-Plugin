@@ -15,8 +15,12 @@ import java.awt.Point;
 import java.awt.event.ActionListener;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.awt.event.WindowAdapter;
+import java.awt.event.WindowEvent;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
@@ -24,6 +28,7 @@ import javax.swing.BoxLayout;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
 import javax.swing.JComponent;
+import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
@@ -34,6 +39,7 @@ import javax.swing.JTextArea;
 import javax.swing.ScrollPaneConstants;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
+import javax.swing.WindowConstants;
 import javax.swing.border.EmptyBorder;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
@@ -75,6 +81,12 @@ public class PricewatchPanel extends PluginPanel
 
 	private static final Color STAR_GOLD = new Color(0xf6, 0xd8, 0x73);
 
+	private static final int GRAPH_HEIGHT = 140;
+
+	private static final int POPOUT_WIDTH = 720;
+
+	private static final int POPOUT_HEIGHT = 460;
+
 	private final ItemManager itemManager;
 
 	private final PricewatchConfig config;
@@ -111,6 +123,9 @@ public class PricewatchPanel extends PluginPanel
 
 	/** The item whose detail view is open, or {@code null} while the list is showing. */
 	private Integer detailItemId;
+
+	/** Open chart windows, keyed by mode and item id. */
+	private final Map<String, PopoutHandle> popouts = new LinkedHashMap<>();
 
 	/**
 	 * Builds the empty panel.
@@ -286,6 +301,7 @@ public class PricewatchPanel extends PluginPanel
 		lastView = view;
 
 		redraw();
+		refreshPopouts();
 	}
 
 	/** Opens the detail view for an item and asks the plugin for its history. */
@@ -398,10 +414,133 @@ public class PricewatchPanel extends PluginPanel
 	 */
 	private JPanel buildSection(DetailSection section, WatchedItem item)
 	{
-		if (section == DetailSection.ITEM_VALUES)
-			return buildCurrentValuesBlock(item);
+		switch (section)
+		{
+			case ITEM_VALUES:
+				return buildCurrentValuesBlock(item);
+			case PRICE_GRAPH:
+				return buildGraphSection(item, PriceGraphPanel.Mode.PRICE);
+			case VOLUME_GRAPH:
+				return buildGraphSection(item, PriceGraphPanel.Mode.VOLUME);
+			default:
+				return null;
+		}
+	}
 
-		return null;
+	/** @return a chart for the item, with a control to pop it out into its own window. */
+	private JPanel buildGraphSection(WatchedItem item, PriceGraphPanel.Mode mode)
+	{
+		final PriceGraphPanel graph = new PriceGraphPanel(mode);
+
+		graph.setPreferredSize(new Dimension(PluginPanel.PANEL_WIDTH - 20, GRAPH_HEIGHT));
+		feed(graph, item, mode);
+
+		final JButton popout = smallButton("^", ColorScheme.LIGHT_GRAY_COLOR, "Open in a resizable window");
+
+		popout.addActionListener(e -> openGraphPopout(item, mode));
+
+		final JPanel controls = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
+
+		controls.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		controls.add(popout);
+
+		final JPanel section = new JPanel(new BorderLayout());
+
+		section.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		section.add(controls, BorderLayout.NORTH);
+		section.add(graph, BorderLayout.CENTER);
+
+		return section;
+	}
+
+	/** Pushes an item's four series and current price into a chart. */
+	private static void feed(PriceGraphPanel graph, WatchedItem item, PriceGraphPanel.Mode mode)
+	{
+		graph.setData(item.getSeries5m(), item.getSeries1h(), item.getSeries6h(), item.getSeries24h(),
+				mode == PriceGraphPanel.Mode.PRICE ? item.getAvgPrice() : 0);
+	}
+
+	/**
+	 * Opens a chart in its own resizable window, or focuses the one already open.
+	 *
+	 * <p>The window is registered so later refreshes push fresh data into it; it
+	 * deregisters itself when closed.
+	 */
+	private void openGraphPopout(WatchedItem item, PriceGraphPanel.Mode mode)
+	{
+		final String key = mode + ":" + item.getItemId();
+		final PopoutHandle existing = popouts.get(key);
+
+		if (existing != null)
+		{
+			existing.frame.toFront();
+			return;
+		}
+
+		final PriceGraphPanel graph = new PriceGraphPanel(mode, true);
+
+		feed(graph, item, mode);
+
+		final JFrame frame = new JFrame(item.getName() + " — " + mode);
+
+		frame.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
+		frame.setSize(POPOUT_WIDTH, POPOUT_HEIGHT);
+		frame.setLocationRelativeTo(this);
+		frame.add(graph);
+		frame.addWindowListener(new PopoutCloseListener(key));
+		frame.setVisible(true);
+
+		popouts.put(key, new PopoutHandle(frame,
+				fresh -> feed(graph, fresh, mode),
+				() -> popouts.remove(key)));
+	}
+
+	/** Pushes the latest data into every open pop-out, closing any whose item has gone. */
+	private void refreshPopouts()
+	{
+		new ArrayList<>(popouts.entrySet()).forEach(entry ->
+		{
+			final int itemId = Integer.parseInt(entry.getKey().substring(entry.getKey().indexOf(':') + 1));
+			final WatchedItem item = lastItems.stream()
+					.filter(candidate -> candidate.getItemId() == itemId)
+					.findFirst()
+					.orElse(null);
+
+			if (item == null)
+			{
+				entry.getValue().frame.dispose();
+				return;
+			}
+
+			entry.getValue().refresher.accept(item);
+		});
+	}
+
+	/** Disposes every open pop-out. Called when the plugin shuts down. */
+	public void closePopouts()
+	{
+		new ArrayList<>(popouts.values()).forEach(handle -> handle.frame.dispose());
+		popouts.clear();
+	}
+
+	/** Deregisters a pop-out when its window is closed. */
+	private final class PopoutCloseListener extends WindowAdapter
+	{
+		private final String key;
+
+		/**
+		 * @param key the pop-out's registry key
+		 */
+		PopoutCloseListener(String key)
+		{
+			this.key = key;
+		}
+
+		@Override
+		public void windowClosed(WindowEvent e)
+		{
+			popouts.remove(key);
+		}
 	}
 
 	/**
