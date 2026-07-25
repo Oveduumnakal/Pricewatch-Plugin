@@ -111,6 +111,13 @@ interface WatchlistActions
 	void reorderWatchlist(List<Integer> orderedIds);
 
 	/**
+	 * Asks for an item's full history so its detail view can be drawn.
+	 *
+	 * @param itemId the item whose detail view was opened
+	 */
+	void requestDetailData(int itemId);
+
+	/**
 	 * @return a shareable code for the current watchlist and its categories
 	 */
 	String exportShareCode();

@@ -28,4 +28,5 @@ class ViewState
 	private List<CategoryState> categories;
 	private boolean favoritesCollapsed;
 	private boolean uncategorizedCollapsed;
+	private List<DetailSection> detailSections;
 }

@@ -107,7 +107,10 @@ public class PricewatchPanel extends PluginPanel
 	private WatchedItem lastPreview;
 
 	private ViewState lastView = new ViewState(
-			SortMode.MANUAL, false, false, new ArrayList<>(), false, false);
+			SortMode.MANUAL, false, false, new ArrayList<>(), false, false, new ArrayList<>());
+
+	/** The item whose detail view is open, or {@code null} while the list is showing. */
+	private Integer detailItemId;
 
 	/**
 	 * Builds the empty panel.
@@ -285,8 +288,166 @@ public class PricewatchPanel extends PluginPanel
 		redraw();
 	}
 
-	/** Re-renders the rows from the last data pushed in, applying the current filter. */
+	/** Opens the detail view for an item and asks the plugin for its history. */
+	private void openDetail(int itemId)
+	{
+		detailItemId = itemId;
+		actions.requestDetailData(itemId);
+		redraw();
+	}
+
+	/** Returns from the detail view to the watchlist. */
+	private void closeDetail()
+	{
+		detailItemId = null;
+		redraw();
+	}
+
+	/** @return the item the detail view is showing, or {@code null} if it is closed or gone. */
+	private WatchedItem detailItem()
+	{
+		if (detailItemId == null)
+			return null;
+
+		if (lastPreview != null && lastPreview.getItemId() == detailItemId)
+			return lastPreview;
+
+		return lastItems.stream()
+				.filter(item -> item.getItemId() == detailItemId)
+				.findFirst()
+				.orElse(null);
+	}
+
+	/**
+	 * Re-renders the panel from the last data pushed in.
+	 *
+	 * <p>An open detail view whose item has since been removed falls back to the
+	 * list rather than showing a stale card.
+	 */
 	private void redraw()
+	{
+		final WatchedItem detail = detailItem();
+
+		if (detailItemId != null && detail == null)
+			detailItemId = null;
+
+		if (detail != null)
+		{
+			drawDetail(detail);
+			return;
+		}
+
+		drawList();
+	}
+
+	/** Replaces the panel contents with one item's detail card. */
+	private void drawDetail(WatchedItem item)
+	{
+		list.removeAll();
+		rowRefs.clear();
+
+		list.add(buildDetailHeader(item));
+		list.add(Box.createVerticalStrut(6));
+
+		for (DetailSection section : lastView.getDetailSections())
+		{
+			final JPanel body = buildSection(section, item);
+
+			if (body == null)
+				continue;
+
+			list.add(sectionLabel(section.getLabel()));
+			list.add(body);
+			list.add(Box.createVerticalStrut(6));
+		}
+
+		list.revalidate();
+		list.repaint();
+	}
+
+	/** @return the detail card's heading: a back control, the item icon and its name. */
+	private JPanel buildDetailHeader(WatchedItem item)
+	{
+		final JPanel header = new JPanel(new BorderLayout(6, 0));
+
+		header.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		header.setBorder(new EmptyBorder(4, 4, 4, 4));
+
+		final JButton back = smallButton("<", ColorScheme.LIGHT_GRAY_COLOR, "Back to the watchlist");
+
+		back.addActionListener(e -> closeDetail());
+
+		final JLabel name = new JLabel();
+
+		name.setForeground(Color.WHITE);
+		name.setFont(FontManager.getRunescapeBoldFont());
+		EllipsisText.set(name, item.getName());
+
+		header.add(back, BorderLayout.WEST);
+		header.add(buildRowIcon(item), BorderLayout.CENTER);
+		header.add(name, BorderLayout.EAST);
+
+		return header;
+	}
+
+	/**
+	 * @return the body of one detail section, or {@code null} for a section whose
+	 *         implementation has not landed yet. The charts, market info, ratings,
+	 *         alchemy and alerts each arrive with their own issue; drawing a bare
+	 *         heading for them until then would look broken
+	 */
+	private JPanel buildSection(DetailSection section, WatchedItem item)
+	{
+		if (section == DetailSection.ITEM_VALUES)
+			return buildCurrentValuesBlock(item);
+
+		return null;
+	}
+
+	/**
+	 * @return the three-cell current values block: high, low and average. Stockpile's
+	 *         fourth cell and its profit label are both quantity-derived, so neither
+	 *         has a counterpart here
+	 */
+	private static JPanel buildCurrentValuesBlock(WatchedItem item)
+	{
+		final JPanel block = new JPanel(new GridLayout(1, 3, 4, 0));
+
+		block.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		block.setBorder(new EmptyBorder(4, 4, 4, 4));
+
+		block.add(valueCell("High", item.getHighPrice()));
+		block.add(valueCell("Low", item.getLowPrice()));
+		block.add(valueCell("Average", item.getAvgPrice()));
+
+		return block;
+	}
+
+	/** @return one labelled figure in the current values block. */
+	private static JPanel valueCell(String label, long value)
+	{
+		final JPanel cell = new JPanel(new GridLayout(2, 1));
+
+		cell.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+
+		final JLabel caption = new JLabel(label, SwingConstants.CENTER);
+
+		caption.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		caption.setFont(FontManager.getRunescapeSmallFont());
+
+		final JLabel figure = new JLabel(value > 0 ? GpFormat.shortValue(value) : "-", SwingConstants.CENTER);
+
+		figure.setForeground(value > 0 ? ColorScheme.GRAND_EXCHANGE_PRICE : ColorScheme.MEDIUM_GRAY_COLOR);
+		figure.setToolTipText(value > 0 ? GpFormat.fullGp(value) : "No price yet");
+
+		cell.add(caption);
+		cell.add(figure);
+
+		return cell;
+	}
+
+	/** Replaces the panel contents with the grouped watchlist. */
+	private void drawList()
 	{
 		list.removeAll();
 		watchedIds.clear();
@@ -416,7 +577,30 @@ public class PricewatchPanel extends PluginPanel
 		row.add(text, BorderLayout.CENTER);
 		row.add(buildRowButtons(item, isPreview), BorderLayout.EAST);
 
+		text.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		text.addMouseListener(new OpenDetailListener(item.getItemId()));
+
 		return row;
+	}
+
+	/** Opens an item's detail view when its name or price line is clicked. */
+	private final class OpenDetailListener extends MouseAdapter
+	{
+		private final int itemId;
+
+		/**
+		 * @param itemId the item this row shows
+		 */
+		OpenDetailListener(int itemId)
+		{
+			this.itemId = itemId;
+		}
+
+		@Override
+		public void mouseClicked(MouseEvent e)
+		{
+			openDetail(itemId);
+		}
 	}
 
 	/** @return the item's icon, loaded asynchronously into a fixed-size label. */
