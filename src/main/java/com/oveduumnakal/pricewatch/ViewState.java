@@ -29,4 +29,6 @@ class ViewState
 	private boolean favoritesCollapsed;
 	private boolean uncategorizedCollapsed;
 	private List<DetailSection> detailSections;
+	private long natureRunePrice;
+	private long fireRunePrice;
 }

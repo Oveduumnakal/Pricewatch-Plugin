@@ -124,7 +124,7 @@ public class PricewatchPanel extends PluginPanel
 	private WatchedItem lastPreview;
 
 	private ViewState lastView = new ViewState(
-			SortMode.MANUAL, false, false, new ArrayList<>(), false, false, new ArrayList<>());
+			SortMode.MANUAL, false, false, new ArrayList<>(), false, false, new ArrayList<>(), 0, 0);
 
 	/** The item whose detail view is open, or {@code null} while the list is showing. */
 	private Integer detailItemId;
@@ -431,11 +431,135 @@ public class PricewatchPanel extends PluginPanel
 				return buildGraphSection(item, PriceGraphPanel.Mode.PRICE);
 			case VOLUME_GRAPH:
 				return buildGraphSection(item, PriceGraphPanel.Mode.VOLUME);
+			case ALCHEMY:
+				return buildAlchemyBlock(item);
 			case LINKS:
 				return buildLinksBlock(item);
 			default:
 				return null;
 		}
+	}
+
+	/**
+	 * @return the ratings strip appended to the market info block: volatility,
+	 *         liquidity, the 30-day range position, and the buy/sell pressure bar
+	 */
+	private JPanel buildRatings(WatchedItem item)
+	{
+		final JPanel ratings = new JPanel(new GridLayout(0, 1, 0, 3));
+
+		ratings.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		ratings.setBorder(new EmptyBorder(4, 8, 4, 8));
+
+		final PriceStats day = item.getWindowStats().get(TimeWindow.H24);
+
+		ratings.add(ratingRow("Volatility", MarketClassifier.volatility(item.getSeriesFor(TimeWindow.WEEK))));
+		ratings.add(ratingRow("Liquidity", MarketClassifier.liquidity(day == null ? 0 : day.getVolume())));
+
+		final long[] range = MarketClassifier.thirtyDayRange(item.getSeriesFor(TimeWindow.MONTH));
+
+		if (range != null && range[1] > range[0])
+		{
+			final PriceRangeBar bar = new PriceRangeBar();
+
+			bar.setRange(range[0], range[1], item.getAvgPrice());
+			bar.setToolTipText("30-day range " + GpFormat.grouped(range[0])
+					+ " to " + GpFormat.grouped(range[1]) + " - "
+					+ MarketClassifier.rangePosition(range[0], range[1], item.getAvgPrice()));
+			ratings.add(bar);
+		}
+
+		ratings.add(buildPressureBar(item));
+
+		return ratings;
+	}
+
+	/** @return a labelled rating, dashed when there is not enough history to classify. */
+	private static JPanel ratingRow(String caption, String value)
+	{
+		final JPanel row = new JPanel(new GridLayout(1, 2, 6, 0));
+
+		row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		row.add(infoCaption(caption));
+		row.add(infoValue(value == null ? "-" : value,
+				value == null ? ColorScheme.MEDIUM_GRAY_COLOR : ColorScheme.LIGHT_GRAY_COLOR,
+				value == null ? "Not enough history yet" : null));
+
+		return row;
+	}
+
+	/** @return the buy/sell pressure bar over the configured look-back window. */
+	private JPanel buildPressureBar(WatchedItem item)
+	{
+		final PressureWindow window = config.pressureWindow();
+		final long[] volumes = MarketClassifier.buySellVolume(
+				item.getSeriesFor(window.window()), window.duration());
+		final long total = volumes[0] + volumes[1];
+
+		final BuySellBar bar = new BuySellBar();
+
+		bar.setRatio(total > 0 ? (double) volumes[0] / total : 0.5);
+		bar.setToolTipText("Bought " + GpFormat.shortValue(volumes[0])
+				+ " against sold " + GpFormat.shortValue(volumes[1]) + " over " + window);
+
+		final JPanel wrapper = new JPanel(new BorderLayout(0, 2));
+
+		wrapper.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		wrapper.add(infoCaption("Pressure (" + window + ")"), BorderLayout.NORTH);
+		wrapper.add(bar, BorderLayout.CENTER);
+
+		return wrapper;
+	}
+
+	/**
+	 * @return the alchemy block: both alch values, and what a cast actually nets once
+	 *         the item and its runes are paid for
+	 */
+	private JPanel buildAlchemyBlock(WatchedItem item)
+	{
+		final JPanel block = new JPanel(new GridLayout(0, 3, 6, 2));
+
+		block.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		block.setBorder(new EmptyBorder(4, 8, 6, 8));
+
+		block.add(infoCaption(""));
+		block.add(infoCaption("Value"));
+		block.add(infoCaption("Profit"));
+
+		block.add(infoCaption("High"));
+		block.add(figure(item.getHighAlch()));
+		block.add(alchProfitCell(item, item.getHighAlch(), MarketFigures.HIGH_ALCH_FIRE_RUNES));
+
+		block.add(infoCaption("Low"));
+		block.add(figure(item.getLowAlch()));
+		block.add(alchProfitCell(item, item.getLowAlch(), MarketFigures.LOW_ALCH_FIRE_RUNES));
+
+		return block;
+	}
+
+	/** @return one alch-profit cell, tinted by sign, with the full sum in its tooltip. */
+	private JLabel alchProfitCell(WatchedItem item, long alchValue, int fireQty)
+	{
+		if (alchValue <= 0 || item.getAvgPrice() <= 0)
+			return infoValue("-", ColorScheme.MEDIUM_GRAY_COLOR, "No alch value or price yet");
+
+		final long nature = lastView.getNatureRunePrice();
+		final long fire = lastView.getFireRunePrice();
+		final long profit = MarketFigures.alchProfit(alchValue, item.getAvgPrice(), nature, fire, fireQty);
+
+		final String tooltip = "<html>" + GpFormat.grouped(alchValue) + " (alch value)<br>"
+				+ "- " + GpFormat.grouped(item.getAvgPrice()) + " (item avg)<br>"
+				+ "- " + GpFormat.grouped(nature) + " (nature rune)<br>"
+				+ "- " + fireQty + " x " + GpFormat.grouped(fire) + " (fire rune)<br>"
+				+ "= " + MarketFigures.signed(profit) + "</html>";
+
+		Color colour = ColorScheme.LIGHT_GRAY_COLOR;
+		if (profit > 0)
+			colour = PricewatchColors.HIGH;
+		else if (profit < 0)
+			colour = PricewatchColors.LOW;
+
+		return infoValue(MarketFigures.signed(profit), colour, tooltip);
 	}
 
 	/**
@@ -466,7 +590,13 @@ public class PricewatchPanel extends PluginPanel
 		block.add(infoCaption("Last sold"));
 		block.add(tradeTime(item.getLatestLowTime(), now, threshold));
 
-		return block;
+		final JPanel section = new JPanel(new BorderLayout(0, 4));
+
+		section.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		section.add(block, BorderLayout.NORTH);
+		section.add(buildRatings(item), BorderLayout.CENTER);
+
+		return section;
 	}
 
 	/** @return a trade-time value, dimmed when the timestamp has gone stale. */

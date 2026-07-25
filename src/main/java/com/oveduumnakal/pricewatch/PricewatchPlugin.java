@@ -70,6 +70,10 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 
 	private static final Type PRICE_CACHE_TYPE = new TypeToken<Map<Integer, CachedPrice>>(){}.getType();
 
+	private static final int NATURE_RUNE_ID = 561;
+
+	private static final int FIRE_RUNE_ID = 554;
+
 	/** How often at most the price cache is rewritten to config during regular refreshes. */
 	private static final Duration PRICE_CACHE_SAVE_INTERVAL = Duration.ofMinutes(5);
 
@@ -145,7 +149,7 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 	private WatchedItem previewItem;
 
 	private final ViewState viewState = new ViewState(
-			SortMode.MANUAL, false, false, new ArrayList<>(), false, false, new ArrayList<>());
+			SortMode.MANUAL, false, false, new ArrayList<>(), false, false, new ArrayList<>(), 0, 0);
 
 	private final List<CategoryState> categories = new ArrayList<>();
 
@@ -1243,6 +1247,21 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 		refreshGePrices();
 	}
 
+	/**
+	 * @param itemId the rune to price
+	 * @return the watched average price if the rune is on the watchlist, else the
+	 *         client's own GE price, so the alchemy figures work whether or not the
+	 *         user happens to watch runes
+	 */
+	private long runePrice(int itemId)
+	{
+		WatchedItem item = watchedItems.get(itemId);
+		if (item != null && item.getAvgPrice() > 0)
+			return item.getAvgPrice();
+
+		return Math.max(0, itemManager.getItemPrice(itemId));
+	}
+
 	/** Writes the watchlist to the RS profile config. */
 	private void persistWatchedItems()
 	{
@@ -1387,7 +1406,8 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 		final ViewState view = new ViewState(
 				viewState.getSortMode(), viewState.isSortReversed(), viewState.isCompact(),
 				new ArrayList<>(categories), favoritesCollapsed, uncategorizedCollapsed,
-				DetailSections.ordered(sectionSlots()));
+				DetailSections.ordered(sectionSlots()),
+				runePrice(NATURE_RUNE_ID), runePrice(FIRE_RUNE_ID));
 
 		SwingUtilities.invokeLater(() -> panel.rebuild(snapshot, preview, view));
 	}

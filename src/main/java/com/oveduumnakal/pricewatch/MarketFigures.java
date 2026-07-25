@@ -111,4 +111,35 @@ final class MarketFigures
 
 		return String.format("%+.1f%%", change * 100);
 	}
+
+	/** Fire runes consumed by one High Level Alchemy cast. */
+	static final int HIGH_ALCH_FIRE_RUNES = 5;
+
+	/** Fire runes consumed by one Low Level Alchemy cast. */
+	static final int LOW_ALCH_FIRE_RUNES = 3;
+
+	/**
+	 * Works out what one alchemy cast actually nets.
+	 *
+	 * @param alchValue    what the spell pays out
+	 * @param itemPrice    what the item costs to buy
+	 * @param naturePrice  the nature rune price
+	 * @param firePrice    the fire rune price
+	 * @param fireQty      fire runes the cast consumes
+	 * @return the profit after the item and both runes, which is routinely negative
+	 */
+	static long alchProfit(long alchValue, long itemPrice, long naturePrice, long firePrice, int fireQty)
+	{
+		return alchValue - itemPrice - naturePrice - (long) fireQty * firePrice;
+	}
+
+	/**
+	 * @param value the figure to sign
+	 * @return the value with an explicit {@code +} when positive, so a profit is never
+	 *         mistaken for a loss at a glance
+	 */
+	static String signed(long value)
+	{
+		return (value > 0 ? "+" : "") + GpFormat.grouped(value) + " gp";
+	}
 }
