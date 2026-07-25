@@ -18,7 +18,7 @@ Pricewatch only ever reports on the market. It never records how many of an item
 
   Search for an item and its full detail view opens straight away. It stays a preview until you actually add it, so a quick price check doesn't clutter your list.
 
-  <img src="docs/img/01-watchlist.png" alt="The Pricewatch panel showing a watchlist with live prices" width="270"> <img src="docs/img/02-preview.gif" alt="Searching an item and seeing its detail view without adding it to the watchlist" width="270">
+  <img src="docs/img/01-watchlist.png" alt="The Pricewatch panel showing a watchlist with live prices" width="270"> <img src="docs/img/02-preview.png" alt="Searching an item and seeing its detail view without adding it to the watchlist" width="270">
 
 - **Show the figure you actually want**
 
@@ -32,7 +32,7 @@ Pricewatch only ever reports on the market. It never records how many of an item
 
   Every item has graphs of its price and how much of it is being traded, from a day back to a full year. Hover to read exact values, or pop a graph out into its own resizable window for a bigger look.
 
-  <img src="docs/img/04-charts.png" alt="Price and volume graphs in an item's detail view" width="30%"> <img src="docs/img/05-chart-popout.gif" alt="A price chart popped out into its own resizable window next to the client" width="68%">
+  <img src="docs/img/04-charts.png" alt="Price and volume graphs in an item's detail view" width="30%"> <img src="docs/img/05-chart-popout.png" alt="A price chart popped out into its own resizable window next to the client" width="68%">
 
 ### Detailed market information
 
@@ -70,13 +70,13 @@ Pricewatch only ever reports on the market. It never records how many of an item
 
   Star the items you check most, group the rest into your own collapsible categories, or let the plugin sort everything into sensible groups with one click. Sort by name, price or how much the price moved today, or simply drag items into any order you like.
 
-  <img src="docs/img/10-categories-favourites.png" alt="The watchlist grouped into collapsible categories with a Favourites group on top" width="30%"> <img src="docs/img/11-auto-categorise.gif" alt="One click on auto-categorise reorganizing the list into sensible groups" width="68%">
+  <img src="docs/img/10-categories-favourites.png" alt="The watchlist grouped into collapsible categories with a Favourites group on top" width="30%"> <img src="docs/img/11-auto-categorise.png" alt="One click on auto-categorise reorganizing the list into sensible groups" width="68%">
 
 - **Handle long lists**
 
   A compact layout fits more items on screen, and a filter box narrows a long list down to what you're looking for in a couple of keystrokes.
 
-  <img src="docs/img/12-compact-filter.gif" alt="The same list in compact and standard layouts, then narrowed with the filter box">
+  <img src="docs/img/12-compact-filter.png" alt="The same list in compact and standard layouts, then narrowed with the filter box">
 
 - **Share and back up**
 
@@ -96,7 +96,7 @@ Pricewatch only ever reports on the market. It never records how many of an item
 
   Opening a Grand Exchange offer can open that item in Pricewatch, or add a button to the offer screen that does it on click.
 
-  <img src="docs/img/15-ge-integration.gif" alt="Clicking the Pricewatch button on a Grand Exchange offer, opening the item in the panel" width="700">
+  <img src="docs/img/15-ge-integration.png" alt="Clicking the Pricewatch button on a Grand Exchange offer, opening the item in the panel" width="700">
 
 ### Price alerts
 
