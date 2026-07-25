@@ -61,7 +61,7 @@ import net.runelite.client.util.ImageUtil;
 		description = "Watchlist of Grand Exchange prices with charts, market ratings and alerts",
 		tags = {"price", "prices", "ge", "grand exchange", "market", "watchlist", "alert", "chart"}
 )
-public class PricewatchPlugin extends Plugin
+public class PricewatchPlugin extends Plugin implements WatchlistActions
 {
 	private static final Type PERSIST_TYPE = new TypeToken<List<PersistedItem>>(){}.getType();
 
@@ -105,6 +105,8 @@ public class PricewatchPlugin extends Plugin
 
 	/** An item being looked at without being watched: priced like the rest, never persisted. */
 	private WatchedItem previewItem;
+
+	private final ViewState viewState = new ViewState(SortMode.MANUAL, false, false);
 
 	private Map<Integer, WikiRealtimePriceClient.ItemMapping> itemMappings = new HashMap<>();
 
@@ -164,7 +166,7 @@ public class PricewatchPlugin extends Plugin
 	@Override
 	protected void startUp()
 	{
-		panel = new PricewatchPanel(itemManager, config, this::addWatchedItem, this::removeWatchedItem);
+		panel = new PricewatchPanel(itemManager, config, this);
 
 		final BufferedImage icon = ImageUtil.loadImageResource(getClass(), "icon.png");
 
@@ -219,6 +221,7 @@ public class PricewatchPlugin extends Plugin
 			return;
 
 		itemsLoaded = true;
+		loadViewState();
 		loadPersistedItems();
 		hydratePriceCache();
 		refreshPanel();
@@ -548,7 +551,8 @@ public class PricewatchPlugin extends Plugin
 	 * @param mode   whether to watch the item or only preview it
 	 * @param itemId the item
 	 */
-	void addWatchedItem(WatchItemMode mode, int itemId)
+	@Override
+	public void addWatchedItem(WatchItemMode mode, int itemId)
 	{
 		clientThread.invokeLater(() ->
 		{
@@ -593,7 +597,8 @@ public class PricewatchPlugin extends Plugin
 	 *
 	 * @param itemId the item to stop watching
 	 */
-	void removeWatchedItem(int itemId)
+	@Override
+	public void removeWatchedItem(int itemId)
 	{
 		clientThread.invokeLater(() ->
 		{
@@ -603,6 +608,101 @@ public class PricewatchPlugin extends Plugin
 			persistWatchedItems();
 			refreshPanel();
 		});
+	}
+
+	/**
+	 * Stars or unstars an item and persists the change.
+	 *
+	 * @param itemId   the item
+	 * @param favorite whether it should be a favourite
+	 */
+	@Override
+	public void setFavorite(int itemId, boolean favorite)
+	{
+		clientThread.invokeLater(() ->
+		{
+			WatchedItem item = watchedItems.get(itemId);
+			if (item == null || item.isFavorite() == favorite)
+				return;
+
+			item.setFavorite(favorite);
+			persistWatchedItems();
+			refreshPanel();
+		});
+	}
+
+	/**
+	 * Changes how the list is ordered and persists the choice.
+	 *
+	 * @param mode the new sort mode
+	 */
+	@Override
+	public void setSortMode(SortMode mode)
+	{
+		if (viewState.getSortMode() == mode)
+			return;
+
+		viewState.setSortMode(mode);
+		viewState.setSortReversed(false);
+		persistViewState();
+		refreshPanel();
+	}
+
+	/** Flips the current sort mode's direction and persists it. */
+	@Override
+	public void toggleSortReversed()
+	{
+		viewState.setSortReversed(!viewState.isSortReversed());
+		persistViewState();
+		refreshPanel();
+	}
+
+	/** Switches the compact row layout on or off and persists it. */
+	@Override
+	public void toggleCompactView()
+	{
+		viewState.setCompact(!viewState.isCompact());
+		persistViewState();
+		refreshPanel();
+	}
+
+	/** Writes the sort mode, direction and compact flag to the RS profile config. */
+	private void persistViewState()
+	{
+		configManager.setRSProfileConfiguration(
+				PricewatchConfig.GROUP, PricewatchConfig.KEY_SORT_MODE, viewState.getSortMode().name());
+		configManager.setRSProfileConfiguration(
+				PricewatchConfig.GROUP, PricewatchConfig.KEY_SORT_REVERSED, viewState.isSortReversed());
+		configManager.setRSProfileConfiguration(
+				PricewatchConfig.GROUP, PricewatchConfig.KEY_COMPACT_VIEW, viewState.isCompact());
+	}
+
+	/** Restores the view state, leaving the defaults in place for anything unreadable. */
+	private void loadViewState()
+	{
+		String mode = configManager.getRSProfileConfiguration(
+				PricewatchConfig.GROUP, PricewatchConfig.KEY_SORT_MODE);
+		if (mode != null)
+		{
+			try
+			{
+				viewState.setSortMode(SortMode.valueOf(mode.trim()));
+			}
+			catch (IllegalArgumentException e)
+			{
+				log.warn("Unknown persisted sort mode {}; keeping the default", mode);
+			}
+		}
+
+		viewState.setSortReversed(readFlag(PricewatchConfig.KEY_SORT_REVERSED));
+		viewState.setCompact(readFlag(PricewatchConfig.KEY_COMPACT_VIEW));
+	}
+
+	/** @return a persisted boolean flag, defaulting to false when absent. */
+	private boolean readFlag(String key)
+	{
+		Boolean value = configManager.getRSProfileConfiguration(PricewatchConfig.GROUP, key, Boolean.class);
+		return Boolean.TRUE.equals(value);
 	}
 
 	/** Writes the watchlist to the RS profile config. */
@@ -746,7 +846,9 @@ public class PricewatchPlugin extends Plugin
 
 		final List<WatchedItem> snapshot = new ArrayList<>(watchedItems.values());
 		final WatchedItem preview = previewItem;
+		final ViewState view = new ViewState(
+				viewState.getSortMode(), viewState.isSortReversed(), viewState.isCompact());
 
-		SwingUtilities.invokeLater(() -> panel.rebuild(snapshot, preview));
+		SwingUtilities.invokeLater(() -> panel.rebuild(snapshot, preview, view));
 	}
 }
