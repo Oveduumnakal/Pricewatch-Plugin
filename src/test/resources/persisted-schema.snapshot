@@ -14,9 +14,20 @@ class CategoryState {
   collapsed: boolean
   name: String
 }
+enum NotificationMetric { HIGH, LOW, AVERAGE, HA_PROFIT, VOLUME, DELTA_PCT, VOLATILITY, LIQUIDITY, RANGE_30D }
+enum NotificationOperation { GT, GTE, LT, LTE, EQ }
+class NotificationRule {
+  metric: NotificationMetric
+  operation: NotificationOperation
+  repeat: boolean
+  timeWindow: TimeWindow
+  value: String
+}
 class PersistedItem {
   category: String
   favorite: boolean
   itemId: int
+  notifications: List<NotificationRule>
   onOverlay: boolean
 }
+enum TimeWindow { NONE, LIVE, M5, H1, H3, H6, H12, H24, WEEK, MONTH, MONTH3, MONTH6, YEAR }
