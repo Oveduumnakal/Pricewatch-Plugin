@@ -6,11 +6,13 @@ package com.oveduumnakal.pricewatch;
 
 import java.awt.BorderLayout;
 import java.awt.Color;
+import java.awt.Component;
 import java.awt.Cursor;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.GridLayout;
+import java.awt.Insets;
 import java.awt.Point;
 import java.awt.event.ActionListener;
 import java.awt.event.MouseAdapter;
@@ -18,6 +20,7 @@ import java.awt.event.MouseEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -25,17 +28,23 @@ import java.util.stream.Collectors;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
+import javax.swing.DefaultCellEditor;
+import javax.swing.DefaultListCellRenderer;
+import javax.swing.DefaultListSelectionModel;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
 import javax.swing.JComponent;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
+import javax.swing.JList;
 import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
 import javax.swing.JScrollPane;
+import javax.swing.JTable;
 import javax.swing.JTextArea;
+import javax.swing.ListSelectionModel;
 import javax.swing.ScrollPaneConstants;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
@@ -43,6 +52,10 @@ import javax.swing.WindowConstants;
 import javax.swing.border.EmptyBorder;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
+import javax.swing.event.ListSelectionListener;
+import javax.swing.table.DefaultTableCellRenderer;
+import javax.swing.table.TableCellRenderer;
+import javax.swing.table.TableColumnModel;
 
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.ui.ColorScheme;
@@ -83,6 +96,14 @@ public class PricewatchPanel extends PluginPanel
 	private static final Color STAR_GOLD = new Color(0xf6, 0xd8, 0x73);
 
 	private static final int GRAPH_HEIGHT = 140;
+
+	private static final int ALERTS_TABLE_HEIGHT = 96;
+
+	/** Timeframes a rule may be measured over; the shorter GE windows only add noise here. */
+	private static final TimeWindow[] ALERT_WINDOWS = {
+			TimeWindow.LIVE, TimeWindow.M5, TimeWindow.H1, TimeWindow.H6,
+			TimeWindow.H24, TimeWindow.WEEK, TimeWindow.MONTH,
+	};
 
 	private static final int POPOUT_WIDTH = 720;
 
@@ -128,6 +149,11 @@ public class PricewatchPanel extends PluginPanel
 
 	/** The item whose detail view is open, or {@code null} while the list is showing. */
 	private Integer detailItemId;
+
+	/** Long-lived so a half-typed threshold survives the redraw a price refresh triggers. */
+	private final AlertsTableModel alertsModel = new AlertsTableModel(this::notifyAlertsEdited);
+
+	private final JTable alertsTable = new JTable(alertsModel);
 
 	/** Open chart windows, keyed by mode and item id. */
 	private final Map<String, PopoutHandle> popouts = new LinkedHashMap<>();
@@ -344,9 +370,16 @@ public class PricewatchPanel extends PluginPanel
 	 *
 	 * <p>An open detail view whose item has since been removed falls back to the
 	 * list rather than showing a stale card.
+	 *
+	 * <p>A redraw while an alert cell is being edited is dropped outright. Rebuilding
+	 * the card would tear the editor out from under the user mid-keystroke, and the
+	 * only thing a background price refresh had to say is repeated on the next one.
 	 */
 	private void redraw()
 	{
+		if (isEditingAlerts())
+			return;
+
 		final WatchedItem detail = detailItem();
 
 		if (detailItemId != null && detail == null)
@@ -435,9 +468,234 @@ public class PricewatchPanel extends PluginPanel
 				return buildAlchemyBlock(item);
 			case LINKS:
 				return buildLinksBlock(item);
+			case ALERTS:
+				return buildAlertsSection(item);
 			default:
 				return null;
 		}
+	}
+
+	/**
+	 * @return the alerts section: the rule table and its add/remove/clear controls.
+	 *         The table itself is a long-lived field rather than rebuilt here, so an
+	 *         edit in progress is not destroyed by the redraw a price refresh causes
+	 */
+	private JPanel buildAlertsSection(WatchedItem item)
+	{
+		alertsModel.setItem(item);
+		applyAlertRenderers();
+
+		final JScrollPane scroll = new JScrollPane(alertsTable);
+
+		scroll.getViewport().setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		scroll.setBorder(BorderFactory.createLineBorder(PricewatchColors.TABLE_GRID));
+		scroll.setPreferredSize(new Dimension(0, ALERTS_TABLE_HEIGHT));
+
+		final JPanel section = new JPanel(new BorderLayout(0, 4));
+
+		section.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		section.setBorder(new EmptyBorder(4, 4, 4, 4));
+		section.add(scroll, BorderLayout.CENTER);
+		section.add(buildAlertButtons(item), BorderLayout.SOUTH);
+
+		return section;
+	}
+
+	/** @return the add/remove/clear button strip under the alerts table. */
+	private JPanel buildAlertButtons(WatchedItem item)
+	{
+		final JButton add = alertButton("+ Add", Color.WHITE, "Add an alert rule");
+		final JButton remove = alertButton("- Remove", Color.WHITE, "Remove the selected rules");
+		final JButton clear = alertButton("Clear", PricewatchColors.LOW, "Remove every alert rule");
+
+		add.addActionListener(e -> addAlertRule(item));
+		remove.addActionListener(e -> removeSelectedAlertRules(item));
+		clear.addActionListener(e -> clearAlertRules(item));
+
+		remove.setEnabled(alertsTable.getSelectedRowCount() > 0);
+		clear.setEnabled(!item.getNotifications().isEmpty());
+
+		for (ListSelectionListener listener : selectionListeners())
+			alertsTable.getSelectionModel().removeListSelectionListener(listener);
+
+		alertsTable.getSelectionModel().addListSelectionListener(
+				e -> remove.setEnabled(alertsTable.getSelectedRowCount() > 0));
+
+		final JPanel buttons = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
+
+		buttons.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		buttons.add(add);
+		buttons.add(remove);
+		buttons.add(clear);
+
+		return buttons;
+	}
+
+	/** @return the selection listeners currently on the alerts table, so a redraw does not stack more. */
+	private ListSelectionListener[] selectionListeners()
+	{
+		return ((DefaultListSelectionModel) alertsTable.getSelectionModel())
+				.getListSelectionListeners();
+	}
+
+	/** Appends a blank rule and hands it to the user to fill in. */
+	private void addAlertRule(WatchedItem item)
+	{
+		item.getNotifications().add(new NotificationRule());
+		alertsModel.fireTableDataChanged();
+		notifyAlertsEdited();
+		redraw();
+	}
+
+	/** Drops every selected rule, committing any edit in flight first so the row indices are stable. */
+	private void removeSelectedAlertRules(WatchedItem item)
+	{
+		if (alertsTable.isEditing())
+			alertsTable.getCellEditor().stopCellEditing();
+
+		final int[] selected = alertsTable.getSelectedRows();
+		if (selected.length == 0)
+			return;
+
+		final List<NotificationRule> rules = item.getNotifications();
+
+		Arrays.sort(selected);
+
+		for (int i = selected.length - 1; i >= 0; i--)
+		{
+			if (selected[i] >= 0 && selected[i] < rules.size())
+				rules.remove(selected[i]);
+		}
+
+		alertsModel.fireTableDataChanged();
+		notifyAlertsEdited();
+		redraw();
+	}
+
+	/** Drops every rule on the item, behind a confirmation since there is no undo. */
+	private void clearAlertRules(WatchedItem item)
+	{
+		if (item.getNotifications().isEmpty())
+			return;
+
+		final int choice = JOptionPane.showConfirmDialog(this,
+				"Remove all alert rules for this item?", "Clear Alerts", JOptionPane.YES_NO_OPTION);
+		if (choice != JOptionPane.YES_OPTION)
+			return;
+
+		item.getNotifications().clear();
+		alertsModel.fireTableDataChanged();
+		notifyAlertsEdited();
+		redraw();
+	}
+
+	/** Points each alerts column at its editor and renderer. */
+	private void applyAlertRenderers()
+	{
+		final Font font = FontManager.getRunescapeSmallFont();
+
+		alertsTable.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		alertsTable.setForeground(Color.WHITE);
+		alertsTable.setGridColor(PricewatchColors.TABLE_GRID);
+		alertsTable.setRowHeight(22);
+		alertsTable.setFont(font);
+		alertsTable.setFillsViewportHeight(true);
+		alertsTable.getTableHeader().setFont(font);
+		alertsTable.getTableHeader().setReorderingAllowed(false);
+		alertsTable.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
+		alertsTable.putClientProperty("terminateEditOnFocusLost", Boolean.TRUE);
+
+		final TableColumnModel columns = alertsTable.getColumnModel();
+
+		columns.getColumn(0).setCellEditor(new DefaultCellEditor(metricCombo(font)));
+		columns.getColumn(1).setCellEditor(new DefaultCellEditor(comboOf(ALERT_WINDOWS, font)));
+		columns.getColumn(2).setCellEditor(new DefaultCellEditor(
+				comboOf(NotificationOperation.values(), font)));
+		columns.getColumn(3).setCellEditor(new AlertValueEditor(alertsModel::getItem));
+
+		final AlertCellRenderer renderer = new AlertCellRenderer();
+
+		for (int i = 0; i < alertsTable.getColumnCount(); i++)
+		{
+			if (alertsTable.getColumnClass(i) != Boolean.class)
+				columns.getColumn(i).setCellRenderer(renderer);
+		}
+
+		columns.getColumn(alertsTable.getColumnCount() - 1).setMaxWidth(30);
+		centreAlertsHeader();
+	}
+
+	/** Centres the alerts table header to match its cells. */
+	private void centreAlertsHeader()
+	{
+		final TableCellRenderer header = alertsTable.getTableHeader().getDefaultRenderer();
+
+		if (header instanceof DefaultTableCellRenderer)
+			((DefaultTableCellRenderer) header).setHorizontalAlignment(SwingConstants.CENTER);
+	}
+
+	/** @return the metric dropdown, which shows full names even though the cells show abbreviations. */
+	private static JComboBox<NotificationMetric> metricCombo(Font font)
+	{
+		final JComboBox<NotificationMetric> combo = comboOf(NotificationMetric.values(), font);
+
+		combo.setRenderer(new DefaultListCellRenderer()
+		{
+			@Override
+			public Component getListCellRendererComponent(JList<?> list, Object value, int index,
+					boolean isSelected, boolean cellHasFocus)
+			{
+				super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+
+				if (value instanceof NotificationMetric)
+					setText(((NotificationMetric) value).getDisplayName());
+
+				setFont(font);
+
+				return this;
+			}
+		});
+
+		return combo;
+	}
+
+	/** @return a small-font dropdown over the given constants. */
+	private static <T> JComboBox<T> comboOf(T[] values, Font font)
+	{
+		final JComboBox<T> combo = new JComboBox<>(values);
+
+		combo.setFont(font);
+
+		return combo;
+	}
+
+	/** @return a compact button styled for the alerts strip. */
+	private static JButton alertButton(String text, Color foreground, String tooltip)
+	{
+		final JButton button = new JButton(text);
+
+		button.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		button.setForeground(foreground);
+		button.setFocusPainted(false);
+		button.setFont(FontManager.getRunescapeSmallFont());
+		button.setMargin(new Insets(2, 5, 2, 5));
+		button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		button.setToolTipText(tooltip);
+
+		return button;
+	}
+
+	/** Tells the plugin an alert rule changed, so it can persist the watchlist. */
+	private void notifyAlertsEdited()
+	{
+		if (detailItemId != null)
+			actions.alertsEdited(detailItemId);
+	}
+
+	/** @return whether an alert cell is mid-edit, so callers can avoid discarding it. */
+	public boolean isEditingAlerts()
+	{
+		return alertsTable.isEditing();
 	}
 
 	/**

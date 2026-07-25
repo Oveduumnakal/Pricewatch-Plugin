@@ -118,6 +118,15 @@ interface WatchlistActions
 	void requestDetailData(int itemId);
 
 	/**
+	 * Reports that an item's alert rules were edited, so they can be persisted. The
+	 * rules are mutated in place on the item the panel was handed, so nothing is
+	 * passed back here beyond which item to save.
+	 *
+	 * @param itemId the item whose rules changed
+	 */
+	void alertsEdited(int itemId);
+
+	/**
 	 * @return a shareable code for the current watchlist and its categories
 	 */
 	String exportShareCode();
