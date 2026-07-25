@@ -70,6 +70,10 @@ public interface PricewatchConfig extends Config
 	String KEY_WATCH_ITEM_COLOR = "watchItemColor";
 	String KEY_UNWATCH_ITEM_COLOR = "unwatchItemColor";
 
+	String KEY_LAST_SEEN_VERSION = "lastSeenVersion";
+	String KEY_VERSION_FIRST_SEEN = "versionFirstSeen";
+	String KEY_WHATS_NEW_DISMISSED = "whatsNewDismissed";
+
 	/** Top-level panel behaviour: how often prices refresh, and global toggles. */
 	@ConfigSection(
 			name = "Main View Settings",

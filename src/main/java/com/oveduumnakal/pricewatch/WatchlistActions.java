@@ -147,4 +147,17 @@ interface WatchlistActions
 	 * @return a user-facing summary of what was imported, or why it was refused
 	 */
 	String importShareCode(String code);
+
+	/**
+	 * @return the bundled release notes, parsed once at startup
+	 */
+	Changelog changelog();
+
+	/**
+	 * @return whether the changelog badge should be highlighted as "What's New"
+	 */
+	boolean isWhatsNew();
+
+	/** Reports that the changelog window has been opened, quieting the badge for this release. */
+	void whatsNewSeen();
 }

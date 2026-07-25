@@ -217,6 +217,9 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 	/** Per-item rolling 4-hour buy-limit windows, persisted to the RS profile. */
 	private final BuyLimitWindows buyLimits = new BuyLimitWindows();
 
+	/** Bundled release notes, parsed once at startup; the newest entry is the current version. */
+	private Changelog changelog;
+
 	private Instant lastGeStateSave;
 
 	/**
@@ -284,6 +287,8 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 	protected void startUp()
 	{
 		shareCodec = new WatchlistShareCodec(gson);
+		changelog = Changelog.load();
+		detectVersionChange();
 		panel = new PricewatchPanel(itemManager, config, this);
 
 		final BufferedImage icon = ImageUtil.loadImageResource(getClass(), "icon.png");
@@ -1688,6 +1693,63 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 		clientThread.invokeLater(() -> applyImportedList(snapshot));
 
 		return "Importing " + snapshot.getItems().size() + " item(s).";
+	}
+
+	/**
+	 * @return the bundled release notes, parsed once at startup
+	 */
+	@Override
+	public Changelog changelog()
+	{
+		return changelog;
+	}
+
+	/**
+	 * @return whether the changelog badge should be highlighted as "What's New" — within a
+	 *         week of this release's first launch, and not yet opened
+	 */
+	@Override
+	public boolean isWhatsNew()
+	{
+		Boolean dismissed = configManager.getConfiguration(
+				PricewatchConfig.GROUP, PricewatchConfig.KEY_WHATS_NEW_DISMISSED, Boolean.class);
+		Long firstSeen = configManager.getConfiguration(
+				PricewatchConfig.GROUP, PricewatchConfig.KEY_VERSION_FIRST_SEEN, Long.class);
+
+		return WhatsNewState.highlight(changelog.currentVersion(), dismissed, firstSeen, System.currentTimeMillis());
+	}
+
+	/** Persists that the user has opened this release's changelog, quieting the badge. */
+	@Override
+	public void whatsNewSeen()
+	{
+		configManager.setConfiguration(
+				PricewatchConfig.GROUP, PricewatchConfig.KEY_WHATS_NEW_DISMISSED, true);
+	}
+
+	/**
+	 * Detects a new plugin version by comparing the changelog's newest version against the
+	 * last-seen version in config. On a change, restamps the first-seen time and re-arms the
+	 * badge, so someone who updates late still gets their week of announcement.
+	 *
+	 * <p>Stored outside the RS profile: which release you last launched is a property of the
+	 * install, not of the account you happened to be logged into at the time.
+	 */
+	private void detectVersionChange()
+	{
+		String current = changelog.currentVersion();
+		String lastSeen = configManager.getConfiguration(
+				PricewatchConfig.GROUP, PricewatchConfig.KEY_LAST_SEEN_VERSION);
+
+		if (!WhatsNewState.isNewRelease(current, lastSeen))
+			return;
+
+		configManager.setConfiguration(
+				PricewatchConfig.GROUP, PricewatchConfig.KEY_LAST_SEEN_VERSION, current);
+		configManager.setConfiguration(
+				PricewatchConfig.GROUP, PricewatchConfig.KEY_VERSION_FIRST_SEEN, System.currentTimeMillis());
+		configManager.setConfiguration(
+				PricewatchConfig.GROUP, PricewatchConfig.KEY_WHATS_NEW_DISMISSED, false);
 	}
 
 	/** Adds every unseen item and category from a decoded snapshot, leaving existing entries alone. */
