@@ -4,6 +4,8 @@
  */
 package com.oveduumnakal.pricewatch;
 
+import java.util.List;
+
 /**
  * Everything the panel can ask the plugin to do. The panel never mutates the
  * watchlist itself: it renders what it is given and calls back here, so all
@@ -100,4 +102,11 @@ interface WatchlistActions
 	 * @return a user-facing summary of what will change
 	 */
 	String autoCategorize(boolean includeCategorized);
+
+	/**
+	 * Replaces the watchlist's stored order after a drag.
+	 *
+	 * @param orderedIds every watched item id, in the new order
+	 */
+	void reorderWatchlist(List<Integer> orderedIds);
 }

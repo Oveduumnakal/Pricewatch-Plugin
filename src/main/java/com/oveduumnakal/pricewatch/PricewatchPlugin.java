@@ -1031,6 +1031,35 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 		}
 	}
 
+	/**
+	 * Replaces the watchlist's stored order after a drag.
+	 *
+	 * <p>Applied only when the proposed order is a faithful permutation of the
+	 * current one, so a drag that resolved against a watchlist which has since
+	 * changed is discarded rather than dropping or duplicating items.
+	 *
+	 * @param orderedIds every watched item id, in the new order
+	 */
+	@Override
+	public void reorderWatchlist(List<Integer> orderedIds)
+	{
+		clientThread.invokeLater(() ->
+		{
+			List<Integer> current = new ArrayList<>(watchedItems.keySet());
+			if (!WatchlistReorder.isPermutationOf(current, orderedIds))
+				return;
+
+			Map<Integer, WatchedItem> reordered = new LinkedHashMap<>();
+			for (Integer itemId : orderedIds)
+				reordered.put(itemId, watchedItems.get(itemId));
+
+			watchedItems.clear();
+			watchedItems.putAll(reordered);
+			persistWatchedItems();
+			refreshPanel();
+		});
+	}
+
 	/** Writes the watchlist to the RS profile config. */
 	private void persistWatchedItems()
 	{
