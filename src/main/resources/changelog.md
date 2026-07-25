@@ -15,7 +15,7 @@ fixed within the same release cycle are omitted, since users never saw them.
 
 The first release of Pricewatch. Keep a watchlist of the items you care about and see what the market is doing to them: live Grand Exchange prices straight from the wiki, price and volume charts, how volatile and how liquid an item is, whether buyers or sellers are winning right now, what's left of your 4-hour buy limit, and what it alchs for. Organise the list into categories and favourites, sort it however you like, and share it with a code. Set price alerts and get a notification when something crosses your threshold. Put the prices you're watching most closely straight onto the game screen, and jump from a Grand Exchange offer to that item's panel with one click.
 
-Pricewatch only ever reports on the market. It never records how many of an item you own or what you paid — the Stockpile plugin covers that, and the two run happily side by side.
+Pricewatch only ever reports on the market. It never records how many of an item you own or what you paid — the Stockpile plugin does all of this and that too, so the two are alternatives and RuneLite runs one or the other, never both.
 
 ## Detailed Breakdown
 
@@ -78,7 +78,7 @@ Pricewatch watches your own Grand Exchange buys and shows how much of an item's 
 [#23](https://github.com/Oveduumnakal/Pricewatch-Plugin/issues/23)
 
 #### Jump straight from an offer to the panel
-A button on the Grand Exchange offer screen opens that item in Pricewatch. Off by default, since Stockpile puts a button in the same place.
+Opening a Grand Exchange offer shows that item in Pricewatch, and a button on the offer screen does the same on click. Either half can be turned off.
 [#36](https://github.com/Oveduumnakal/Pricewatch-Plugin/issues/36)
 
 ### Price Alerts
@@ -94,6 +94,10 @@ Put up to five watched items onto the screen as draggable price boxes, in a stan
 [#34](https://github.com/Oveduumnakal/Pricewatch-Plugin/issues/34)
 
 ### Elsewhere
+
+#### Pricewatch or Stockpile, not both
+Stockpile already does everything Pricewatch does, and tracks what you own on top, so running both would be the same panel twice. Turning one on now turns the other off. Each keeps its own settings and list, so switching back later picks up where you left off.
+[#55](https://github.com/Oveduumnakal/Pricewatch-Plugin/issues/55)
 
 #### "What's New" changelog
 This window — a quick way to see what each update added, right inside the plugin.
