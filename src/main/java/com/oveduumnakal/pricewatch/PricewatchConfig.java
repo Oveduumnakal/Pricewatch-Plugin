@@ -15,9 +15,10 @@ import net.runelite.client.config.Range;
 
 /**
  * Settings for the plugin. The group name is deliberately distinct from the
- * Stockpile plugin's: the two are independent plugins that a user may run side
- * by side, and sharing a group would make them overwrite each other's keys in
- * the same RuneScape profile.
+ * Stockpile plugin's, so that sharing a RuneScape profile with it never makes the
+ * two overwrite each other's keys. That still matters even though the plugins now
+ * conflict and cannot run at once: both leave their settings behind when disabled,
+ * and a user who switches back and forth would otherwise find them corrupted.
  *
  * <p>Sections arrive with the features they configure, so this grows over the
  * phases rather than landing whole.
@@ -415,14 +416,13 @@ public interface PricewatchConfig extends Config
 			keyName = KEY_GE_INTEGRATION,
 			name = "GE Integration",
 			description = "Off; a \"View in Pricewatch\" button on the offer screen; auto-open the offer's item "
-					+ "in the panel; or both. Defaults to Off because Stockpile injects a button onto the same "
-					+ "screen, and running both would put two buttons in the same corner.",
+					+ "in the panel; or both.",
 			section = geIntegrationSection,
 			position = 0
 	)
 	default GeIntegrationMode geIntegration()
 	{
-		return GeIntegrationMode.OFF;
+		return GeIntegrationMode.BOTH;
 	}
 
 	@ConfigItem(
