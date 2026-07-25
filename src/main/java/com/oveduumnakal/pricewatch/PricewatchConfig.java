@@ -31,6 +31,13 @@ public interface PricewatchConfig extends Config
 
 	String KEY_PRICE_REFRESH_SECONDS = "priceRefreshSeconds";
 
+	String KEY_PRICE_LINE = "priceLine";
+	String KEY_SHOW_COL_HIGH = "showColHigh";
+	String KEY_SHOW_COL_LOW = "showColLow";
+	String KEY_SHOW_COL_AVG = "showColAvg";
+	String KEY_SHOW_COL_VOLUME = "showColVolume";
+	String KEY_PRICE_CHANGE_INDICATOR = "priceChangeIndicator";
+
 	String KEY_ADD_CONTEXT_MENU_OPTION = "addContextMenuOption";
 	String KEY_WATCH_ITEM_COLOR = "watchItemColor";
 	String KEY_UNWATCH_ITEM_COLOR = "unwatchItemColor";
@@ -43,11 +50,19 @@ public interface PricewatchConfig extends Config
 	)
 	String mainViewSection = "mainView";
 
+	/** What the price line under each watchlist row's name shows. */
+	@ConfigSection(
+			name = "Watched Item Display",
+			description = "Controls the price line under each watched item",
+			position = 1
+	)
+	String watchedItemSection = "watchedItem";
+
 	/** The right-click menu entry that adds or removes an item from the watchlist. */
 	@ConfigSection(
 			name = "Context Menu",
 			description = "The right-click option for watching an item",
-			position = 1
+			position = 2
 	)
 	String contextMenuSection = "contextMenu";
 
@@ -62,6 +77,81 @@ public interface PricewatchConfig extends Config
 	default int priceRefreshSeconds()
 	{
 		return 60;
+	}
+
+	@ConfigItem(
+			keyName = KEY_PRICE_LINE,
+			name = "Price Line",
+			description = "Which price data the line under the item name shows. None hides the line, "
+					+ "leaving a plain icon and name row.",
+			section = watchedItemSection,
+			position = 0
+	)
+	default TimeWindow priceLine()
+	{
+		return TimeWindow.LIVE;
+	}
+
+	@ConfigItem(
+			keyName = KEY_SHOW_COL_HIGH,
+			name = "Show High",
+			description = "Show the high (instant-buy) price on the price line",
+			section = watchedItemSection,
+			position = 1
+	)
+	default boolean showColHigh()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+			keyName = KEY_SHOW_COL_LOW,
+			name = "Show Low",
+			description = "Show the low (instant-sell) price on the price line",
+			section = watchedItemSection,
+			position = 2
+	)
+	default boolean showColLow()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+			keyName = KEY_SHOW_COL_AVG,
+			name = "Show Average",
+			description = "Show the average price on the price line",
+			section = watchedItemSection,
+			position = 3
+	)
+	default boolean showColAvg()
+	{
+		return false;
+	}
+
+	@ConfigItem(
+			keyName = KEY_SHOW_COL_VOLUME,
+			name = "Show Volume",
+			description = "Show traded volume on the price line. The Latest window carries no volume, "
+					+ "so pick an averaged window to see a figure.",
+			section = watchedItemSection,
+			position = 4
+	)
+	default boolean showColVolume()
+	{
+		return false;
+	}
+
+	@ConfigItem(
+			keyName = KEY_PRICE_CHANGE_INDICATOR,
+			name = "Price Change Indicator",
+			description = "Colour prices green or red as they move. Only the Latest window tracks "
+					+ "movement between refreshes.",
+			section = watchedItemSection,
+			position = 5
+	)
+	default PriceIndicatorMode priceChangeIndicator()
+	{
+		return PriceIndicatorMode.CHANGE;
 	}
 
 	@ConfigItem(
