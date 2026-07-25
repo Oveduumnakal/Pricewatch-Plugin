@@ -52,6 +52,7 @@ import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.ui.ClientToolbar;
 import net.runelite.client.ui.NavigationButton;
+import net.runelite.client.ui.overlay.OverlayManager;
 import net.runelite.client.util.ColorUtil;
 import net.runelite.client.util.ImageUtil;
 
@@ -77,6 +78,9 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 	private static final Type PRICE_CACHE_TYPE = new TypeToken<Map<Integer, CachedPrice>>(){}.getType();
 
 	private static final Type GE_LIMITS_TYPE = new TypeToken<Map<Integer, long[]>>(){}.getType();
+
+	/** How many items may sit on the on-screen overlay at once, one draggable box each. */
+	static final int OVERLAY_MAX = 5;
 
 	private static final int NATURE_RUNE_ID = 561;
 
@@ -140,6 +144,9 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 	private Notifier notifier;
 
 	@Inject
+	private OverlayManager overlayManager;
+
+	@Inject
 	private ScheduledExecutorService executor;
 
 	@Inject
@@ -180,6 +187,9 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 	private ScheduledFuture<?> priceRefreshTask;
 
 	private Instant lastPriceCacheSave;
+
+	/** One box per overlay slot, registered for the plugin's lifetime and hidden when its slot is empty. */
+	private final List<PricewatchScreenOverlay> screenOverlays = new ArrayList<>();
 
 	/** Turns cumulative GE offer updates into the discrete buy fills the limit counts. */
 	private final GeOfferTracker geOfferTracker = new GeOfferTracker();
@@ -267,6 +277,14 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 
 		clientToolbar.addNavigation(navButton);
 
+		for (int slot = 0; slot < OVERLAY_MAX; slot++)
+		{
+			PricewatchScreenOverlay overlay = new PricewatchScreenOverlay(this, config, itemManager, slot);
+
+			screenOverlays.add(overlay);
+			overlayManager.add(overlay);
+		}
+
 		executor.execute(this::fetchItemMappings);
 		scheduleRefresh();
 	}
@@ -283,6 +301,9 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 			priceRefreshTask.cancel(false);
 			priceRefreshTask = null;
 		}
+
+		screenOverlays.forEach(overlayManager::remove);
+		screenOverlays.clear();
 
 		clientToolbar.removeNavigation(navButton);
 		SwingUtilities.invokeLater(panel::closePopouts);
@@ -354,6 +375,12 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 		if (PricewatchConfig.KEY_PRICE_REFRESH_SECONDS.equals(event.getKey()))
 		{
 			scheduleRefresh();
+			return;
+		}
+
+		if (PricewatchConfig.KEY_SCREEN_OVERLAY_ON_TOP.equals(event.getKey()))
+		{
+			rebucketScreenOverlays();
 			return;
 		}
 
@@ -1334,6 +1361,62 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 				refreshPanel();
 			});
 		});
+	}
+
+	/**
+	 * Adds or removes an item from the on-screen overlay set.
+	 *
+	 * <p>Capped at {@link #OVERLAY_MAX}: an add beyond the cap is ignored rather than
+	 * evicting someone else's choice, since there is no obvious victim to pick.
+	 *
+	 * @param itemId the item to flag
+	 * @param on     whether it should appear on the overlay
+	 */
+	@Override
+	public void setOnOverlay(int itemId, boolean on)
+	{
+		clientThread.invokeLater(() ->
+		{
+			WatchedItem item = watchedItems.get(itemId);
+			if (item == null || item.isOnOverlay() == on)
+				return;
+
+			if (on && overlayItemCount() >= OVERLAY_MAX)
+				return;
+
+			item.setOnOverlay(on);
+			persistWatchedItems();
+			refreshPanel();
+		});
+	}
+
+	/** @return how many watched items are currently flagged onto the overlay. */
+	private int overlayItemCount()
+	{
+		return (int) watchedItems.values()
+				.stream()
+				.filter(WatchedItem::isOnOverlay)
+				.count();
+	}
+
+	/** @return the items the overlay draws, in watchlist order, capped at {@link #OVERLAY_MAX}. */
+	List<WatchedItem> getOverlayItems()
+	{
+		return watchedItems.values().stream()
+				.filter(WatchedItem::isOnOverlay)
+				.limit(OVERLAY_MAX)
+				.collect(Collectors.toList());
+	}
+
+	/**
+	 * Removes and re-adds the boxes so the overlay manager re-buckets them into the
+	 * layer the config now asks for. Changing {@code getLayer()}'s answer alone does
+	 * nothing — the manager reads it when an overlay is added.
+	 */
+	private void rebucketScreenOverlays()
+	{
+		screenOverlays.forEach(overlayManager::remove);
+		screenOverlays.forEach(overlayManager::add);
 	}
 
 	/**

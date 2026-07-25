@@ -95,6 +95,8 @@ public class PricewatchPanel extends PluginPanel
 
 	private static final Color STAR_GOLD = new Color(0xf6, 0xd8, 0x73);
 
+	private static final Color OVERLAY_ON = new Color(0x7a, 0x9d, 0xd3);
+
 	private static final int GRAPH_HEIGHT = 140;
 
 	private static final int ALERTS_TABLE_HEIGHT = 96;
@@ -1405,6 +1407,8 @@ public class PricewatchPanel extends PluginPanel
 
 		star.addActionListener(e -> actions.setFavorite(item.getItemId(), !starred));
 
+		final JButton overlay = overlayToggle(item);
+
 		final JButton category = smallButton("…", ColorScheme.LIGHT_GRAY_COLOR, "Set category");
 
 		category.addActionListener(e -> showCategoryMenu(category, item));
@@ -1414,10 +1418,57 @@ public class PricewatchPanel extends PluginPanel
 		remove.addActionListener(e -> actions.removeWatchedItem(item.getItemId()));
 
 		buttons.add(star);
+		buttons.add(overlay);
 		buttons.add(category);
 		buttons.add(remove);
 
 		return buttons;
+	}
+
+	/**
+	 * Builds a row's on-screen overlay toggle.
+	 *
+	 * <p>State is carried by colour rather than by swapping the glyph, since the panel
+	 * font renders anything outside its range as tofu and only a small set is proven.
+	 *
+	 * @param item the row's item
+	 * @return the toggle, disabled once the overlay is full, with the reason in the
+	 *         tooltip — the plugin would ignore the click anyway, and a button that
+	 *         silently does nothing is worse than one that says why
+	 */
+	private JButton overlayToggle(WatchedItem item)
+	{
+		final boolean on = item.isOnOverlay();
+		final boolean full = !on && overlayCount() >= PricewatchPlugin.OVERLAY_MAX;
+
+		final JButton toggle = smallButton("•",
+				on ? OVERLAY_ON : ColorScheme.MEDIUM_GRAY_COLOR,
+				overlayTooltip(on, full));
+
+		toggle.setEnabled(!full);
+		toggle.addActionListener(e -> actions.setOnOverlay(item.getItemId(), !on));
+
+		return toggle;
+	}
+
+	/** @return the overlay toggle's tooltip for its current state. */
+	private static String overlayTooltip(boolean on, boolean full)
+	{
+		if (on)
+			return "Remove from the on-screen overlay";
+
+		if (full)
+			return "The on-screen overlay is full (" + PricewatchPlugin.OVERLAY_MAX + " items)";
+
+		return "Show on the on-screen overlay";
+	}
+
+	/** @return how many watched items are currently flagged onto the overlay. */
+	private long overlayCount()
+	{
+		return lastItems.stream()
+				.filter(WatchedItem::isOnOverlay)
+				.count();
 	}
 
 	/** Opens the per-item category picker, with a way into the manage dialog. */
