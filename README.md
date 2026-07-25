@@ -1,7 +1,6 @@
 <p align="center">
-  <img src="banner.png" alt="Pricewatch banner">
+  <img src="banner.png" alt="Pricewatch">
 </p>
-<h1 align="center">Pricewatch</h1>
 
 Pricewatch is a RuneLite plugin that keeps an eye on the Grand Exchange for you. Pick the items you care about and the plugin shows you what the market is doing to them: live prices straight from the wiki, price and volume charts, how much an item's price jumps around and how quickly it trades, whether buyers or sellers are winning right now, what's left of your buy limit, and what it alchs for. Set an alert and it will tell you when something crosses your number.
 
