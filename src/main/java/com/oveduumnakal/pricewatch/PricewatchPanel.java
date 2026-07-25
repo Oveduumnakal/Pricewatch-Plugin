@@ -50,6 +50,7 @@ import net.runelite.client.ui.FontManager;
 import net.runelite.client.ui.PluginPanel;
 import net.runelite.client.ui.components.IconTextField;
 import net.runelite.client.util.AsyncBufferedImage;
+import net.runelite.client.util.LinkBrowser;
 import net.runelite.http.api.item.ItemPrice;
 
 /**
@@ -86,6 +87,10 @@ public class PricewatchPanel extends PluginPanel
 	private static final int POPOUT_WIDTH = 720;
 
 	private static final int POPOUT_HEIGHT = 460;
+
+	private static final String WIKI_BASE = "https://oldschool.runescape.wiki/w/";
+
+	private static final String PRICES_BASE = "https://prices.runescape.wiki/osrs/item/";
 
 	private final ItemManager itemManager;
 
@@ -418,13 +423,165 @@ public class PricewatchPanel extends PluginPanel
 		{
 			case ITEM_VALUES:
 				return buildCurrentValuesBlock(item);
+			case MARKET_INFO:
+				return buildMarketInfoBlock(item);
+			case PRICE_OVERVIEW:
+				return buildOverviewGrid(item);
 			case PRICE_GRAPH:
 				return buildGraphSection(item, PriceGraphPanel.Mode.PRICE);
 			case VOLUME_GRAPH:
 				return buildGraphSection(item, PriceGraphPanel.Mode.VOLUME);
+			case LINKS:
+				return buildLinksBlock(item);
 			default:
 				return null;
 		}
+	}
+
+	/**
+	 * @return the market info block: the GE sell tax on the current price, and when
+	 *         the item last traded on each side, dimmed once those times go stale
+	 */
+	private JPanel buildMarketInfoBlock(WatchedItem item)
+	{
+		final long now = System.currentTimeMillis() / 1000L;
+		final int threshold = config.stalePriceThresholdMinutes();
+
+		final JPanel block = new JPanel(new GridLayout(0, 2, 6, 2));
+
+		block.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		block.setBorder(new EmptyBorder(4, 8, 6, 8));
+
+		block.add(infoCaption("GE tax"));
+		block.add(infoValue(GpFormat.shortGp(MarketFigures.geTax(item.getAvgPrice())),
+				ColorScheme.LIGHT_GRAY_COLOR, "2% of the sale price, nothing under 50gp, capped at 5M"));
+
+		block.add(infoCaption("Buy limit"));
+		block.add(infoValue(item.getBuyLimit() > 0 ? GpFormat.grouped(item.getBuyLimit()) : "-",
+				ColorScheme.LIGHT_GRAY_COLOR, "How many you may buy per 4-hour window"));
+
+		block.add(infoCaption("Last bought"));
+		block.add(tradeTime(item.getLatestHighTime(), now, threshold));
+
+		block.add(infoCaption("Last sold"));
+		block.add(tradeTime(item.getLatestLowTime(), now, threshold));
+
+		return block;
+	}
+
+	/** @return a trade-time value, dimmed when the timestamp has gone stale. */
+	private static JLabel tradeTime(long epochSeconds, long now, int thresholdMinutes)
+	{
+		final boolean stale = MarketFigures.isStale(epochSeconds, now, thresholdMinutes);
+
+		return infoValue(MarketFigures.formatAge(epochSeconds, now),
+				stale ? ColorScheme.MEDIUM_GRAY_COLOR : ColorScheme.LIGHT_GRAY_COLOR,
+				stale ? "Older than the stale threshold" : null);
+	}
+
+	/** @return a caption cell in a two-column info block. */
+	private static JLabel infoCaption(String text)
+	{
+		final JLabel label = new JLabel(text);
+
+		label.setForeground(ColorScheme.BRAND_ORANGE);
+		label.setFont(FontManager.getRunescapeSmallFont());
+
+		return label;
+	}
+
+	/** @return a value cell in a two-column info block. */
+	private static JLabel infoValue(String text, Color colour, String tooltip)
+	{
+		final JLabel label = new JLabel(text, SwingConstants.RIGHT);
+
+		label.setForeground(colour);
+		label.setFont(FontManager.getRunescapeSmallFont());
+		label.setToolTipText(tooltip);
+
+		return label;
+	}
+
+	/**
+	 * @return the overview grid: one row per time window in the configured preset,
+	 *         with high, low, average, volume and the change against the live price
+	 */
+	private JPanel buildOverviewGrid(WatchedItem item)
+	{
+		final JPanel grid = new JPanel(new GridLayout(0, 6, 4, 2));
+
+		grid.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		grid.setBorder(new EmptyBorder(4, 6, 6, 6));
+
+		for (String heading : new String[]{"", "High", "Low", "Avg", "Vol", "Chg"})
+			grid.add(infoCaption(heading));
+
+		for (TimeWindow window : TimeWindow.values())
+		{
+			if (!config.overviewPreset().getWindows().contains(window))
+				continue;
+
+			final PriceStats stats = item.getWindowStats().get(window);
+
+			grid.add(infoCaption(window.getLabel()));
+			grid.add(figure(stats == null ? 0 : stats.getHigh()));
+			grid.add(figure(stats == null ? 0 : stats.getLow()));
+			grid.add(figure(stats == null ? 0 : stats.getAvg()));
+			grid.add(figure(stats == null ? 0 : stats.getVolume()));
+			grid.add(changeCell(item, stats));
+		}
+
+		return grid;
+	}
+
+	/** @return a numeric grid cell, dashed when there is no figure. */
+	private static JLabel figure(long value)
+	{
+		return infoValue(value > 0 ? GpFormat.shortValue(value) : "-",
+				value > 0 ? ColorScheme.LIGHT_GRAY_COLOR : ColorScheme.MEDIUM_GRAY_COLOR,
+				value > 0 ? GpFormat.grouped(value) : null);
+	}
+
+	/** @return the change of the live price against a window's average, tinted by direction. */
+	private static JLabel changeCell(WatchedItem item, PriceStats stats)
+	{
+		final double change = MarketFigures.percentChange(
+				item.getAvgPrice(), stats == null ? 0 : stats.getAvg());
+
+		Color colour = ColorScheme.MEDIUM_GRAY_COLOR;
+		if (change > 0)
+			colour = PricewatchColors.HIGH;
+		else if (change < 0)
+			colour = PricewatchColors.LOW;
+
+		return infoValue(MarketFigures.formatChange(change), colour, null);
+	}
+
+	/** @return the links block: the wiki page and the live prices page for this item. */
+	private JPanel buildLinksBlock(WatchedItem item)
+	{
+		final JPanel block = new JPanel(new GridLayout(1, 2, 6, 0));
+
+		block.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		block.setBorder(new EmptyBorder(4, 8, 6, 8));
+		block.add(linkButton("Wiki", WIKI_BASE + item.getName().replace(' ', '_')));
+		block.add(linkButton("Live Prices", PRICES_BASE + item.getItemId()));
+
+		return block;
+	}
+
+	/** @return a button that opens a URL in the user's browser. */
+	private static JButton linkButton(String text, String url)
+	{
+		final JButton button = new JButton(text);
+
+		button.setFont(FontManager.getRunescapeSmallFont());
+		button.setFocusPainted(false);
+		button.setToolTipText(url);
+		button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		button.addActionListener(e -> LinkBrowser.browse(url));
+
+		return button;
 	}
 
 	/** @return a chart for the item, with a control to pop it out into its own window. */
