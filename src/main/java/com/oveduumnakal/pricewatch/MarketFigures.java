@@ -69,6 +69,27 @@ final class MarketFigures
 	}
 
 	/**
+	 * Formats a remaining duration compactly, for counting down to a reset.
+	 *
+	 * @param seconds how long is left; zero or negative reads as elapsed
+	 * @return e.g. {@code "2hr 14m"}, {@code "43m"}, {@code "12s"}, or {@code "now"}
+	 */
+	static String formatCountdown(long seconds)
+	{
+		if (seconds <= 0)
+			return "now";
+
+		if (seconds < 60)
+			return seconds + "s";
+
+		long mins = seconds / 60;
+		if (mins < 60)
+			return mins + "m";
+
+		return (mins / 60) + "hr " + (mins % 60) + "m";
+	}
+
+	/**
 	 * @param epochSeconds     when the trade happened, or 0 when unknown
 	 * @param nowSeconds       the current time in epoch seconds
 	 * @param thresholdMinutes how old a trade may be before it reads as stale
