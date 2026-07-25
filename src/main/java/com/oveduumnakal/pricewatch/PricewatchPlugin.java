@@ -257,6 +257,7 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 		}
 
 		clientToolbar.removeNavigation(navButton);
+		SwingUtilities.invokeLater(panel::closePopouts);
 
 		watchedItems.clear();
 		categories.clear();
@@ -1147,7 +1148,28 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 	@Override
 	public void requestDetailData(int itemId)
 	{
-		requestSeries(itemId);
+		executor.execute(() ->
+		{
+			List<WikiRealtimePriceClient.PricePoint> s5 = wikiPriceClient.fetchTimeseries(itemId, "5m");
+			List<WikiRealtimePriceClient.PricePoint> s1h = wikiPriceClient.fetchTimeseries(itemId, "1h");
+			List<WikiRealtimePriceClient.PricePoint> s6 = wikiPriceClient.fetchTimeseries(itemId, "6h");
+			List<WikiRealtimePriceClient.PricePoint> s24 = wikiPriceClient.fetchTimeseries(itemId, "24h");
+
+			clientThread.invokeLater(() ->
+			{
+				WatchedItem item = lookupItem(itemId);
+				if (item == null)
+					return;
+
+				item.setSeries5m(s5);
+				item.setSeries1h(s1h);
+				item.setSeries6h(s6);
+				item.setSeries24h(s24);
+				applyItemMetadata(item);
+				recomputeWindowStats(item);
+				refreshPanel();
+			});
+		});
 	}
 
 	/**
