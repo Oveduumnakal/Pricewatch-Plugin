@@ -71,12 +71,20 @@ import net.runelite.client.util.ImageUtil;
  * the panel renders it with. The panel never mutates any of it: it calls back
  * through {@link WatchlistActions} so every change and its persistence happen
  * here, on the client thread.
+ *
+ * <p><b>Conflicts with Stockpile.</b> That plugin contains everything this one does
+ * and the tracking half besides, so the two are alternatives rather than companions.
+ * The client enforces this itself: enabling either plugin disables and stops the
+ * other, and the conflict is symmetric, so only this side declares it. The value is
+ * matched against Stockpile's {@code PluginDescriptor.name} — a plain string, with
+ * nothing to catch it if that name ever changes.
  */
 @Slf4j
 @PluginDescriptor(
 		name = "Pricewatch",
 		description = "Watchlist of Grand Exchange prices with charts, market ratings and alerts",
-		tags = {"price", "prices", "ge", "grand exchange", "market", "watchlist", "alert", "chart"}
+		tags = {"price", "prices", "ge", "grand exchange", "market", "watchlist", "alert", "chart"},
+		conflicts = {"Stockpile"}
 )
 public class PricewatchPlugin extends Plugin implements WatchlistActions
 {
@@ -459,7 +467,8 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 	/**
 	 * Adds a "Watch item" / "Unwatch item" right-click option to item menu entries,
 	 * when enabled. The wording is deliberately distinct from the Stockpile plugin's
-	 * "Track Item", since a user running both sees both entries on the same menu.
+	 * "Track Item": the two can no longer run at once, but "watch" describes what this
+	 * plugin does to an item and "track" does not.
 	 *
 	 * @param event the menu being opened
 	 */
