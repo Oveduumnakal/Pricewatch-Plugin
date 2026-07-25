@@ -3,8 +3,8 @@
 
 Fetches the member pages of each bucket's wiki categories (including one level
 of subcategories) and writes them as ``name<TAB>bucket`` lines to
-``src/main/resources/com/oveduumnakal/item-categories.txt``, sorted by name so
-regeneration produces stable diffs.
+``src/main/resources/com/oveduumnakal/pricewatch/item-categories.txt``, sorted by
+name so regeneration produces stable diffs.
 
 Buckets are listed in precedence order and the first bucket to claim a name
 wins, so specific buckets (Jewellery, Ammo) must precede broad ones. Gems is
@@ -26,9 +26,9 @@ import time
 import urllib.parse
 import urllib.request
 
-USER_AGENT = "Stockpile-Plugin category generator (https://github.com/Oveduumnakal/Stockpile-Plugin)"
+USER_AGENT = "Pricewatch-Plugin category generator (https://github.com/Oveduumnakal/Pricewatch-Plugin)"
 API = "https://oldschool.runescape.wiki/api.php"
-OUTPUT = "src/main/resources/com/oveduumnakal/item-categories.txt"
+OUTPUT = "src/main/resources/com/oveduumnakal/pricewatch/item-categories.txt"
 
 # Bucket -> wiki categories, in precedence order: first match wins.
 BUCKETS = [

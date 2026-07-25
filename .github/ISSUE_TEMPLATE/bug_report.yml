@@ -67,7 +67,7 @@ body:
         - Market info (buy limit remaining, GE tax, ratings, buy/sell pressure)
         - Alchemy values
         - Price alerts
-        - Panel / overlays (on-screen price boxes, ground or inventory highlights)
+        - Panel / overlays (on-screen price boxes)
         - Grand Exchange integration (offer screen button)
         - Configuration / settings
         - Other
