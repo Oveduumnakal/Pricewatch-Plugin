@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -40,8 +41,10 @@ import net.runelite.api.events.MenuOpened;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.widgets.Widget;
 import net.runelite.api.widgets.WidgetUtil;
+import net.runelite.client.Notifier;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
+import net.runelite.client.config.Notification;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.game.ItemManager;
@@ -134,6 +137,9 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 	private ConfigManager configManager;
 
 	@Inject
+	private Notifier notifier;
+
+	@Inject
 	private ScheduledExecutorService executor;
 
 	@Inject
@@ -195,6 +201,7 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 		boolean favorite;
 		String category;
 		boolean onOverlay;
+		List<NotificationRule> notifications;
 	}
 
 	/**
@@ -629,6 +636,7 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 				|| Duration.between(lastPriceCacheSave, Instant.now()).compareTo(PRICE_CACHE_SAVE_INTERVAL) >= 0)
 			persistPriceCache();
 
+		evaluateAlerts();
 		refreshPanel();
 
 		for (WatchedItem item : priceableItems())
@@ -636,6 +644,74 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 			if (item.isTradeable() && item.hasPrices())
 				requestSeries(item.getItemId());
 		}
+	}
+
+	/**
+	 * Tests every watched item's alert rules against the prices just applied and raises
+	 * a notification for each that has come true.
+	 *
+	 * <p>A repeat rule fires only on the false&rarr;true edge and then re-arms, so a
+	 * condition that simply stays true does not notify on every refresh. A one-shot rule
+	 * fires and is deleted. Either way a rule whose reading cannot be taken yet is left
+	 * untouched — {@code lastCondition} starts null precisely so a condition already true
+	 * at login is not mistaken for an edge.
+	 */
+	private void evaluateAlerts()
+	{
+		final Notification style = config.alertStyle();
+		if (!style.isEnabled())
+			return;
+
+		boolean changed = false;
+		for (WatchedItem item : watchedItems.values())
+		{
+			if (fireDueAlerts(item, style))
+				changed = true;
+		}
+
+		if (changed)
+			persistWatchedItems();
+	}
+
+	/**
+	 * Fires and prunes one item's due rules.
+	 *
+	 * @return whether any rule was removed, meaning the watchlist needs re-persisting
+	 */
+	private boolean fireDueAlerts(WatchedItem item, Notification style)
+	{
+		final long naturePrice = runePrice(NATURE_RUNE_ID);
+		final long firePrice = runePrice(FIRE_RUNE_ID);
+
+		boolean removed = false;
+		Iterator<NotificationRule> rules = item.getNotifications().iterator();
+		while (rules.hasNext())
+		{
+			NotificationRule rule = rules.next();
+			Boolean condition = AlertEvaluation.evaluate(item, rule, naturePrice, firePrice);
+			if (condition == null)
+				continue;
+
+			if (rule.isRepeat())
+			{
+				boolean edge = condition && Boolean.FALSE.equals(rule.getLastCondition());
+				rule.setLastCondition(condition);
+
+				if (edge)
+					notifier.notify(style, AlertEvaluation.notificationText(item, rule));
+
+				continue;
+			}
+
+			if (condition)
+			{
+				notifier.notify(style, AlertEvaluation.notificationText(item, rule));
+				rules.remove();
+				removed = true;
+			}
+		}
+
+		return removed;
 	}
 
 	/** @return every item that should receive live prices: the watchlist plus any preview entry. */
@@ -1354,6 +1430,7 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 			p.favorite = item.isFavorite();
 			p.category = item.getCategory();
 			p.onOverlay = item.isOnOverlay();
+			p.notifications = item.getNotifications().isEmpty() ? null : item.getNotifications();
 			list.add(p);
 		}
 
@@ -1388,21 +1465,25 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 			return;
 
 		for (PersistedItem p : list)
-			restoreItem(p.itemId, p.favorite, p.category, p.onOverlay);
+			restoreItem(p);
 	}
 
 	/** Rebuilds one watched item from its persisted fields. */
-	private void restoreItem(int itemId, boolean favorite, String category, boolean onOverlay)
+	private void restoreItem(PersistedItem p)
 	{
-		if (watchedItems.containsKey(itemId))
+		if (watchedItems.containsKey(p.itemId))
 			return;
 
-		WatchedItem item = buildItem(itemId, WatchItemMode.WATCH);
+		WatchedItem item = buildItem(p.itemId, WatchItemMode.WATCH);
 
-		item.setFavorite(favorite);
-		item.setCategory(category);
-		item.setOnOverlay(onOverlay);
-		watchedItems.put(itemId, item);
+		item.setFavorite(p.favorite);
+		item.setCategory(p.category);
+		item.setOnOverlay(p.onOverlay);
+
+		if (p.notifications != null)
+			item.setNotifications(new ArrayList<>(p.notifications));
+
+		watchedItems.put(p.itemId, item);
 	}
 
 	/**
