@@ -35,8 +35,12 @@ import net.runelite.api.GrandExchangeOffer;
 import net.runelite.api.GrandExchangeOfferState;
 import net.runelite.api.MenuAction;
 import net.runelite.api.MenuEntry;
+import net.runelite.api.Tile;
+import net.runelite.api.TileItem;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GrandExchangeOfferChanged;
+import net.runelite.api.events.ItemDespawned;
+import net.runelite.api.events.ItemSpawned;
 import net.runelite.api.events.MenuOpened;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.widgets.Widget;
@@ -91,6 +95,16 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 
 	/** How often at most the buy-limit windows are rewritten to config as fills arrive. */
 	private static final Duration GE_STATE_SAVE_INTERVAL = Duration.ofMinutes(1);
+
+	private static final long GLOW_PERIOD_SLOW_MS = 2000;
+
+	private static final long GLOW_PERIOD_MEDIUM_MS = 1500;
+
+	private static final long GLOW_PERIOD_FAST_MS = 1000;
+
+	private static final float GLOW_MIN_ALPHA = 0.2f;
+
+	private static final float GLOW_MAX_ALPHA = 1f;
 
 	/** Config key to detail section, for resolving slot collisions from a change event. */
 	private static final Map<String, DetailSection> SECTION_KEYS = sectionKeys();
@@ -191,6 +205,20 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 	/** One box per overlay slot, registered for the plugin's lifetime and hidden when its slot is empty. */
 	private final List<PricewatchScreenOverlay> screenOverlays = new ArrayList<>();
 
+	@Inject
+	private PricewatchGroundOverlay groundOverlay;
+
+	@Inject
+	private PricewatchHighlightOverlay highlightOverlay;
+
+	/**
+	 * On-screen ground items and the tiles they sit on, read by the ground overlay.
+	 *
+	 * <p>Kept solely so the overlay knows where to draw. Nothing here infers that an
+	 * item was picked up or dropped — that is Stockpile's business, not this plugin's.
+	 */
+	private final Map<TileItem, Tile> groundItems = new HashMap<>();
+
 	/** Turns cumulative GE offer updates into the discrete buy fills the limit counts. */
 	private final GeOfferTracker geOfferTracker = new GeOfferTracker();
 
@@ -285,6 +313,9 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 			overlayManager.add(overlay);
 		}
 
+		overlayManager.add(groundOverlay);
+		overlayManager.add(highlightOverlay);
+
 		executor.execute(this::fetchItemMappings);
 		scheduleRefresh();
 	}
@@ -304,6 +335,9 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 
 		screenOverlays.forEach(overlayManager::remove);
 		screenOverlays.clear();
+		overlayManager.remove(groundOverlay);
+		overlayManager.remove(highlightOverlay);
+		groundItems.clear();
 
 		clientToolbar.removeNavigation(navButton);
 		SwingUtilities.invokeLater(panel::closePopouts);
@@ -501,6 +535,76 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 		}
 
 		return -1;
+	}
+
+	/**
+	 * Records a ground item so the ground overlay can outline it.
+	 *
+	 * <p>This is bookkeeping for drawing and nothing else. Stockpile uses the same event
+	 * to infer that an item was picked up or dropped; none of that comes with it here.
+	 *
+	 * @param event the client's spawn event
+	 */
+	@Subscribe
+	public void onItemSpawned(ItemSpawned event)
+	{
+		groundItems.put(event.getItem(), event.getTile());
+	}
+
+	/**
+	 * Forgets a ground item once it is gone.
+	 *
+	 * @param event the client's despawn event
+	 */
+	@Subscribe
+	public void onItemDespawned(ItemDespawned event)
+	{
+		groundItems.remove(event.getItem());
+	}
+
+	/** @return the live map of on-screen ground items to their tiles, read by the ground overlay. */
+	Map<TileItem, Tile> getGroundItems()
+	{
+		return groundItems;
+	}
+
+	/**
+	 * @param itemId a canonical item id
+	 * @return whether that item is on the watchlist. A previewed item does not count:
+	 *         it was never added, so highlighting it in the world would be a surprise
+	 */
+	boolean isWatched(int itemId)
+	{
+		return watchedItems.containsKey(itemId);
+	}
+
+	/**
+	 * @return the highlight's current alpha, a sine wave between {@link #GLOW_MIN_ALPHA}
+	 *         and {@link #GLOW_MAX_ALPHA} over the configured period, or a steady full
+	 *         alpha when the pulse is switched off
+	 */
+	float breathingAlpha()
+	{
+		final long period;
+		switch (config.glowEffect())
+		{
+			case SLOW:
+				period = GLOW_PERIOD_SLOW_MS;
+				break;
+			case MEDIUM:
+				period = GLOW_PERIOD_MEDIUM_MS;
+				break;
+			case FAST:
+				period = GLOW_PERIOD_FAST_MS;
+				break;
+			default:
+				return GLOW_MAX_ALPHA;
+		}
+
+		final double phase = (System.currentTimeMillis() % period) / (double) period;
+		final double wave = (Math.sin(phase * 2 * Math.PI) + 1) / 2;
+
+		return GLOW_MIN_ALPHA + (GLOW_MAX_ALPHA - GLOW_MIN_ALPHA) * (float) wave;
 	}
 
 	/**
