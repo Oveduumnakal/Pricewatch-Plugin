@@ -26,8 +26,15 @@ import com.google.gson.reflect.TypeToken;
 import com.google.inject.Provides;
 import lombok.extern.slf4j.Slf4j;
 
+import net.runelite.api.Client;
 import net.runelite.api.GameState;
+import net.runelite.api.MenuAction;
+import net.runelite.api.MenuEntry;
 import net.runelite.api.events.GameStateChanged;
+import net.runelite.api.events.MenuOpened;
+import net.runelite.api.gameval.InterfaceID;
+import net.runelite.api.widgets.Widget;
+import net.runelite.api.widgets.WidgetUtil;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
@@ -37,6 +44,7 @@ import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.ui.ClientToolbar;
 import net.runelite.client.ui.NavigationButton;
+import net.runelite.client.util.ColorUtil;
 import net.runelite.client.util.ImageUtil;
 
 /**
@@ -62,13 +70,8 @@ public class PricewatchPlugin extends Plugin
 	/** How often at most the price cache is rewritten to config during regular refreshes. */
 	private static final Duration PRICE_CACHE_SAVE_INTERVAL = Duration.ofMinutes(5);
 
-	/**
-	 * The watchlist used when nothing has been persisted yet: a handful of
-	 * high-volume, recognisable items so the panel has something to show.
-	 * Temporary phase 1 scaffolding — phase 2 replaces it with search and the
-	 * right-click "Watch item" entry, at which point a new profile starts empty.
-	 */
-	private static final int[] SEED_ITEM_IDS = {4151, 11802, 561, 1515, 536, 385};
+	@Inject
+	private Client client;
 
 	@Inject
 	private ClientToolbar clientToolbar;
@@ -99,6 +102,9 @@ public class PricewatchPlugin extends Plugin
 	private NavigationButton navButton;
 
 	private final Map<Integer, WatchedItem> watchedItems = new LinkedHashMap<>();
+
+	/** An item being looked at without being watched: priced like the rest, never persisted. */
+	private WatchedItem previewItem;
 
 	private Map<Integer, WikiRealtimePriceClient.ItemMapping> itemMappings = new HashMap<>();
 
@@ -158,7 +164,7 @@ public class PricewatchPlugin extends Plugin
 	@Override
 	protected void startUp()
 	{
-		panel = new PricewatchPanel(itemManager);
+		panel = new PricewatchPanel(itemManager, this::addWatchedItem, this::removeWatchedItem);
 
 		final BufferedImage icon = ImageUtil.loadImageResource(getClass(), "icon.png");
 
@@ -190,6 +196,7 @@ public class PricewatchPlugin extends Plugin
 		clientToolbar.removeNavigation(navButton);
 
 		watchedItems.clear();
+		previewItem = null;
 		itemMappings = new HashMap<>();
 		mappingsLoaded = false;
 		itemsLoaded = false;
@@ -231,6 +238,80 @@ public class PricewatchPlugin extends Plugin
 
 		if (PricewatchConfig.KEY_PRICE_REFRESH_SECONDS.equals(event.getKey()))
 			scheduleRefresh();
+	}
+
+	/**
+	 * Adds a "Watch item" / "Unwatch item" right-click option to item menu entries,
+	 * when enabled. The wording is deliberately distinct from the Stockpile plugin's
+	 * "Track Item", since a user running both sees both entries on the same menu.
+	 *
+	 * @param event the menu being opened
+	 */
+	@Subscribe
+	public void onMenuOpened(MenuOpened event)
+	{
+		if (!config.addContextMenuOption())
+			return;
+
+		final MenuEntry[] entries = event.getMenuEntries();
+		for (int idx = entries.length - 1; idx >= 0; --idx)
+		{
+			final MenuEntry entry = entries[idx];
+			int itemId = getItemIdFromMenuEntry(entry);
+			if (itemId <= 0)
+				continue;
+
+			final int canonicalId = itemManager.canonicalize(itemId);
+			final boolean watched = watchedItems.containsKey(canonicalId);
+
+			client.getMenu().createMenuEntry(1)
+					.setOption(watched
+							? ColorUtil.prependColorTag("Unwatch item", config.unwatchItemColor())
+							: ColorUtil.prependColorTag("Watch item", config.watchItemColor()))
+					.setTarget(entry.getTarget())
+					.setType(MenuAction.RUNELITE)
+					.onClick(e ->
+					{
+						if (watched)
+							removeWatchedItem(canonicalId);
+						else
+							addWatchedItem(WatchItemMode.WATCH, canonicalId);
+					});
+			return;
+		}
+	}
+
+	/** @return the item id behind a menu entry (ground item or inventory/bank widget), or -1 if none. */
+	private int getItemIdFromMenuEntry(MenuEntry entry)
+	{
+		switch (entry.getType())
+		{
+			case GROUND_ITEM_FIRST_OPTION:
+			case GROUND_ITEM_SECOND_OPTION:
+			case GROUND_ITEM_THIRD_OPTION:
+			case GROUND_ITEM_FOURTH_OPTION:
+			case GROUND_ITEM_FIFTH_OPTION:
+			case EXAMINE_ITEM_GROUND:
+				return entry.getIdentifier();
+			default:
+				break;
+		}
+
+		Widget w = entry.getWidget();
+		if (w == null)
+			return -1;
+
+		int interfaceId = WidgetUtil.componentToInterface(w.getId());
+		if (interfaceId == InterfaceID.INVENTORY
+				|| interfaceId == InterfaceID.BANKMAIN
+				|| interfaceId == InterfaceID.BANKSIDE
+				|| interfaceId == InterfaceID.SHOPMAIN
+				|| interfaceId == InterfaceID.SHOPSIDE)
+		{
+			return w.getItemId();
+		}
+
+		return -1;
 	}
 
 	/** (Re)schedules the recurring price refresh at the configured rate (min 30s), replacing any prior task. */
@@ -327,7 +408,7 @@ public class PricewatchPlugin extends Plugin
 	 */
 	private void applyGePrices(Map<Integer, WikiRealtimePriceClient.ItemPrices> all)
 	{
-		for (WatchedItem item : watchedItems.values())
+		for (WatchedItem item : priceableItems())
 		{
 			WikiRealtimePriceClient.ItemPrices prices = all.get(item.getItemId());
 			if (prices != null)
@@ -348,11 +429,32 @@ public class PricewatchPlugin extends Plugin
 
 		refreshPanel();
 
-		for (WatchedItem item : watchedItems.values())
+		for (WatchedItem item : priceableItems())
 		{
 			if (item.isTradeable() && item.hasPrices())
 				requestSeries(item.getItemId());
 		}
+	}
+
+	/** @return every item that should receive live prices: the watchlist plus any preview entry. */
+	private List<WatchedItem> priceableItems()
+	{
+		List<WatchedItem> items = new ArrayList<>(watchedItems.values());
+
+		if (previewItem != null)
+			items.add(previewItem);
+
+		return items;
+	}
+
+	/** @return the watched or previewed item with this id, or {@code null}. */
+	private WatchedItem lookupItem(int itemId)
+	{
+		WatchedItem item = watchedItems.get(itemId);
+		if (item != null)
+			return item;
+
+		return previewItem != null && previewItem.getItemId() == itemId ? previewItem : null;
 	}
 
 	/**
@@ -394,7 +496,7 @@ public class PricewatchPlugin extends Plugin
 			List<WikiRealtimePriceClient.PricePoint> points = wikiPriceClient.fetchTimeseries(itemId, "5m");
 			clientThread.invokeLater(() ->
 			{
-				WatchedItem item = watchedItems.get(itemId);
+				WatchedItem item = lookupItem(itemId);
 				if (item == null)
 					return;
 
@@ -432,25 +534,53 @@ public class PricewatchPlugin extends Plugin
 	}
 
 	/**
-	 * Adds an item to the watchlist, ignoring a duplicate.
+	 * Adds an item to the watchlist, or sets it as the preview entry.
 	 *
-	 * @param itemId the item to watch
+	 * <p>A {@link WatchItemMode#PREVIEW} item is shown with prices like any other
+	 * but is never persisted, and there is only ever one — previewing a second
+	 * replaces the first. Watching an item clears any preview of it.
+	 *
+	 * @param mode   whether to watch the item or only preview it
+	 * @param itemId the item
 	 */
-	void addWatchedItem(int itemId)
+	void addWatchedItem(WatchItemMode mode, int itemId)
 	{
 		clientThread.invokeLater(() ->
 		{
+			if (mode == WatchItemMode.PREVIEW)
+			{
+				if (watchedItems.containsKey(itemId))
+					return;
+
+				previewItem = buildItem(itemId, WatchItemMode.PREVIEW);
+				refreshPanel();
+				refreshGePrices();
+				return;
+			}
+
+			if (previewItem != null && previewItem.getItemId() == itemId)
+				previewItem = null;
+
 			if (watchedItems.containsKey(itemId))
 				return;
 
-			String name = itemManager.getItemComposition(itemId).getName();
-			WatchedItem item = new WatchedItem(itemId, name);
-			item.setTradeable(itemManager.getItemComposition(itemId).isTradeable());
-			watchedItems.put(itemId, item);
-			applyItemMetadata(item);
+			watchedItems.put(itemId, buildItem(itemId, WatchItemMode.WATCH));
 			persistWatchedItems();
 			refreshPanel();
+			refreshGePrices();
 		});
+	}
+
+	/** @return a new item with its name, tradeability and cached GE metadata applied. */
+	private WatchedItem buildItem(int itemId, WatchItemMode mode)
+	{
+		WatchedItem item = new WatchedItem(itemId, itemManager.getItemComposition(itemId).getName());
+
+		item.setMode(mode);
+		item.setTradeable(itemManager.getItemComposition(itemId).isTradeable());
+		applyItemMetadata(item);
+
+		return item;
 	}
 
 	/**
@@ -490,9 +620,8 @@ public class PricewatchPlugin extends Plugin
 
 	/**
 	 * Restores the watchlist from the per-profile JSON written by
-	 * {@link #persistWatchedItems()}, falling back to {@link #SEED_ITEM_IDS} when
-	 * nothing has been stored yet. The seed is not written back — until there is a
-	 * way to add items, an untouched profile should stay untouched.
+	 * {@link #persistWatchedItems()}. A profile that has never watched anything
+	 * simply starts empty.
 	 */
 	private void loadPersistedItems()
 	{
@@ -512,13 +641,8 @@ public class PricewatchPlugin extends Plugin
 			}
 		}
 
-		if (list == null || list.isEmpty())
-		{
-			for (int itemId : SEED_ITEM_IDS)
-				restoreItem(itemId, false, null, false);
-
+		if (list == null)
 			return;
-		}
 
 		for (PersistedItem p : list)
 			restoreItem(p.itemId, p.favorite, p.category, p.onOverlay);
@@ -530,14 +654,12 @@ public class PricewatchPlugin extends Plugin
 		if (watchedItems.containsKey(itemId))
 			return;
 
-		String name = itemManager.getItemComposition(itemId).getName();
-		WatchedItem item = new WatchedItem(itemId, name);
-		item.setTradeable(itemManager.getItemComposition(itemId).isTradeable());
+		WatchedItem item = buildItem(itemId, WatchItemMode.WATCH);
+
 		item.setFavorite(favorite);
 		item.setCategory(category);
 		item.setOnOverlay(onOverlay);
 		watchedItems.put(itemId, item);
-		applyItemMetadata(item);
 	}
 
 	/**
@@ -618,7 +740,8 @@ public class PricewatchPlugin extends Plugin
 			return;
 
 		final List<WatchedItem> snapshot = new ArrayList<>(watchedItems.values());
+		final WatchedItem preview = previewItem;
 
-		SwingUtilities.invokeLater(() -> panel.rebuild(snapshot));
+		SwingUtilities.invokeLater(() -> panel.rebuild(snapshot, preview));
 	}
 }

@@ -4,6 +4,8 @@
  */
 package com.oveduumnakal.pricewatch;
 
+import java.awt.Color;
+
 import net.runelite.client.config.Config;
 import net.runelite.client.config.ConfigGroup;
 import net.runelite.client.config.ConfigItem;
@@ -29,6 +31,10 @@ public interface PricewatchConfig extends Config
 
 	String KEY_PRICE_REFRESH_SECONDS = "priceRefreshSeconds";
 
+	String KEY_ADD_CONTEXT_MENU_OPTION = "addContextMenuOption";
+	String KEY_WATCH_ITEM_COLOR = "watchItemColor";
+	String KEY_UNWATCH_ITEM_COLOR = "unwatchItemColor";
+
 	/** Top-level panel behaviour: how often prices refresh, and global toggles. */
 	@ConfigSection(
 			name = "Main View Settings",
@@ -36,6 +42,14 @@ public interface PricewatchConfig extends Config
 			position = 0
 	)
 	String mainViewSection = "mainView";
+
+	/** The right-click menu entry that adds or removes an item from the watchlist. */
+	@ConfigSection(
+			name = "Context Menu",
+			description = "The right-click option for watching an item",
+			position = 1
+	)
+	String contextMenuSection = "contextMenu";
 
 	@Range(min = 30)
 	@ConfigItem(
@@ -48,5 +62,41 @@ public interface PricewatchConfig extends Config
 	default int priceRefreshSeconds()
 	{
 		return 60;
+	}
+
+	@ConfigItem(
+			keyName = KEY_ADD_CONTEXT_MENU_OPTION,
+			name = "Right-click Watch Option",
+			description = "Add a \"Watch item\" / \"Unwatch item\" entry to item right-click menus",
+			section = contextMenuSection,
+			position = 0
+	)
+	default boolean addContextMenuOption()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+			keyName = KEY_WATCH_ITEM_COLOR,
+			name = "\"Watch item\" Colour",
+			description = "Colour of the \"Watch item\" context menu entry",
+			section = contextMenuSection,
+			position = 1
+	)
+	default Color watchItemColor()
+	{
+		return new Color(0xd4, 0xe6, 0xfb);
+	}
+
+	@ConfigItem(
+			keyName = KEY_UNWATCH_ITEM_COLOR,
+			name = "\"Unwatch item\" Colour",
+			description = "Colour of the \"Unwatch item\" context menu entry",
+			section = contextMenuSection,
+			position = 2
+	)
+	default Color unwatchItemColor()
+	{
+		return new Color(0xfb, 0xd4, 0xd4);
 	}
 }
