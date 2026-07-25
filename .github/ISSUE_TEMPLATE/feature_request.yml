@@ -15,10 +15,7 @@ body:
       options:
         - label: I searched existing issues and this feature hasn't already been requested.
           required: true
-        - label: >
-            My request is about market data, not about tracking how many of an item
-            I own or what I paid for it. (Pricewatch deliberately does neither — the
-            Stockpile plugin covers that.)
+        - label: "My request is about market data, not about tracking how many of an item I own or what I paid for it. Pricewatch deliberately does neither — the Stockpile plugin covers that."
           required: true
 
   - type: textarea
