@@ -1,0 +1,13 @@
+class CachedPrice {
+  avg: long
+  high: long
+  highTime: long
+  low: long
+  lowTime: long
+}
+class PersistedItem {
+  category: String
+  favorite: boolean
+  itemId: int
+  onOverlay: boolean
+}
