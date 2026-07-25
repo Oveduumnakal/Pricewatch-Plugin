@@ -4,6 +4,7 @@
  */
 package com.oveduumnakal.pricewatch;
 
+import java.awt.BasicStroke;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
@@ -11,14 +12,17 @@ import java.awt.Cursor;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
+import java.awt.Graphics2D;
 import java.awt.GridLayout;
 import java.awt.Insets;
 import java.awt.Point;
+import java.awt.RenderingHints;
 import java.awt.event.ActionListener;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
+import java.awt.image.BufferedImage;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -31,9 +35,12 @@ import javax.swing.BoxLayout;
 import javax.swing.DefaultCellEditor;
 import javax.swing.DefaultListCellRenderer;
 import javax.swing.DefaultListSelectionModel;
+import javax.swing.Icon;
+import javax.swing.ImageIcon;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
 import javax.swing.JComponent;
+import javax.swing.JEditorPane;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JList;
@@ -42,6 +49,7 @@ import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
 import javax.swing.JScrollPane;
+import javax.swing.JSplitPane;
 import javax.swing.JTable;
 import javax.swing.JTextArea;
 import javax.swing.ListSelectionModel;
@@ -51,6 +59,7 @@ import javax.swing.SwingUtilities;
 import javax.swing.WindowConstants;
 import javax.swing.border.EmptyBorder;
 import javax.swing.event.DocumentEvent;
+import javax.swing.event.HyperlinkEvent;
 import javax.swing.event.DocumentListener;
 import javax.swing.event.ListSelectionListener;
 import javax.swing.table.DefaultTableCellRenderer;
@@ -111,6 +120,13 @@ public class PricewatchPanel extends PluginPanel
 
 	private static final int POPOUT_HEIGHT = 460;
 
+	private static final int CHANGELOG_WIDTH = 608;
+
+	private static final int CHANGELOG_HEIGHT = 560;
+
+	/** Width of the changelog window's release navigation column. */
+	private static final int CHANGELOG_NAV_WIDTH = 168;
+
 	private static final String WIKI_BASE = "https://oldschool.runescape.wiki/w/";
 
 	private static final String PRICES_BASE = "https://prices.runescape.wiki/osrs/item/";
@@ -160,6 +176,19 @@ public class PricewatchPanel extends PluginPanel
 	/** Open chart windows, keyed by mode and item id. */
 	private final Map<String, PopoutHandle> popouts = new LinkedHashMap<>();
 
+	/** The header badge that opens the changelog window. */
+	private final JButton changelogButton = new JButton();
+
+	/**
+	 * The open changelog window, or {@code null} when none is. Held apart from
+	 * {@link #popouts}, whose keys are parsed back into item ids on every refresh and
+	 * which has nothing to push into a window showing release notes.
+	 */
+	private JFrame changelogWindow;
+
+	/** Whether the badge is currently announcing a new release. */
+	private boolean whatsNew;
+
 	/**
 	 * Builds the empty panel.
 	 *
@@ -174,6 +203,7 @@ public class PricewatchPanel extends PluginPanel
 		this.itemManager = itemManager;
 		this.config = config;
 		this.actions = actions;
+		this.whatsNew = actions.isWhatsNew();
 
 		setLayout(new BorderLayout());
 		setBorder(new EmptyBorder(8, 8, 8, 8));
@@ -188,17 +218,39 @@ public class PricewatchPanel extends PluginPanel
 		add(buildScrollingList(), BorderLayout.CENTER);
 	}
 
-	/** @return the search field, results dropdown, and the filter/sort/compact controls. */
+	/** @return the title row, search field with its results dropdown, and the filter/sort/compact controls. */
 	private JPanel buildHeader()
 	{
 		final JPanel header = new JPanel(new BorderLayout());
 
 		header.setBackground(ColorScheme.DARK_GRAY_COLOR);
 		header.setBorder(new EmptyBorder(0, 0, 6, 0));
-		header.add(buildSearchHeader(), BorderLayout.NORTH);
+		header.add(buildTitleRow(), BorderLayout.NORTH);
+		header.add(buildSearchHeader(), BorderLayout.CENTER);
 		header.add(buildControls(), BorderLayout.SOUTH);
 
 		return header;
+	}
+
+	/** @return the plugin name with the changelog badge beside it. */
+	private JPanel buildTitleRow()
+	{
+		final JLabel title = new JLabel("Pricewatch", SwingConstants.CENTER);
+
+		title.setForeground(Color.WHITE);
+		title.setFont(FontManager.getRunescapeBoldFont());
+		title.setBorder(new EmptyBorder(0, 0, 4, 0));
+
+		styleChangelogBadge();
+		applyChangelogButtonStyle();
+
+		final JPanel row = new JPanel(new BorderLayout());
+
+		row.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		row.add(title, BorderLayout.CENTER);
+		row.add(changelogButton, BorderLayout.EAST);
+
+		return row;
 	}
 
 	/** @return the filter box with the sort and compact buttons beside it. */
@@ -250,6 +302,290 @@ public class PricewatchPanel extends PluginPanel
 		button.setBorder(BorderFactory.createLineBorder(ColorScheme.MEDIUM_GRAY_COLOR));
 		button.setToolTipText(tooltip);
 		button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+	}
+
+	/**
+	 * Applies the changelog badge's fixed styling and behaviour;
+	 * {@link #applyChangelogButtonStyle} sets its label and colour.
+	 */
+	private void styleChangelogBadge()
+	{
+		changelogButton.setFont(FontManager.getRunescapeSmallFont());
+		changelogButton.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		changelogButton.setFocusPainted(false);
+		changelogButton.setBorderPainted(false);
+		changelogButton.setContentAreaFilled(false);
+		changelogButton.setBorder(new EmptyBorder(0, 6, 4, 0));
+		changelogButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		changelogButton.setToolTipText("See what's new in this release");
+		changelogButton.setHorizontalTextPosition(SwingConstants.LEFT);
+		changelogButton.setIconTextGap(3);
+		changelogButton.addActionListener(e -> openChangelogWindow());
+		changelogButton.addMouseListener(new ChangelogBadgeHover());
+	}
+
+	/** Brightens the badge while hovered, restoring its resting style on exit. */
+	private final class ChangelogBadgeHover extends MouseAdapter
+	{
+		@Override
+		public void mouseEntered(MouseEvent e)
+		{
+			changelogButton.setForeground(Color.WHITE);
+			changelogButton.setIcon(whatsNew ? sparkleIcon(Color.WHITE) : null);
+		}
+
+		@Override
+		public void mouseExited(MouseEvent e)
+		{
+			applyChangelogButtonStyle();
+		}
+	}
+
+	/** Applies the badge's resting style — gold and sparkled while announcing, muted once seen. */
+	private void applyChangelogButtonStyle()
+	{
+		changelogButton.setText(whatsNew ? "What's New" : "Change log");
+		changelogButton.setForeground(whatsNew ? PricewatchColors.AVG : ColorScheme.LIGHT_GRAY_COLOR);
+		changelogButton.setIcon(whatsNew ? sparkleIcon(PricewatchColors.AVG) : null);
+	}
+
+	/** Opens the changelog window, or raises it when already open; the first open quiets the badge. */
+	private void openChangelogWindow()
+	{
+		if (whatsNew)
+		{
+			whatsNew = false;
+			actions.whatsNewSeen();
+			applyChangelogButtonStyle();
+		}
+
+		if (changelogWindow != null)
+		{
+			changelogWindow.toFront();
+			return;
+		}
+
+		changelogWindow = new JFrame("What's New");
+		changelogWindow.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
+		changelogWindow.setSize(CHANGELOG_WIDTH, CHANGELOG_HEIGHT);
+		changelogWindow.setLocationRelativeTo(this);
+		changelogWindow.add(buildChangelogContent());
+		changelogWindow.addWindowListener(new ChangelogCloseListener());
+		changelogWindow.setVisible(true);
+	}
+
+	/** Forgets the changelog window once it is closed, so the next open builds a fresh one. */
+	private final class ChangelogCloseListener extends WindowAdapter
+	{
+		@Override
+		public void windowClosed(WindowEvent e)
+		{
+			changelogWindow = null;
+		}
+	}
+
+	/**
+	 * @return the changelog window's contents: a navigation column listing every release,
+	 *         with the selected release's sections beneath it as quick-links, and that
+	 *         release's notes rendered beside it
+	 */
+	private JComponent buildChangelogContent()
+	{
+		final List<Changelog.Release> releases = actions.changelog().releases();
+		final JEditorPane body = new JEditorPane();
+
+		body.setContentType("text/html");
+		body.setEditable(false);
+		body.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		body.addHyperlinkListener(e ->
+		{
+			if (e.getEventType() == HyperlinkEvent.EventType.ACTIVATED && e.getURL() != null)
+				LinkBrowser.browse(e.getURL().toString());
+		});
+
+		final JPanel nav = new JPanel();
+
+		nav.setLayout(new BoxLayout(nav, BoxLayout.Y_AXIS));
+		nav.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		nav.setBorder(new EmptyBorder(4, 4, 4, 4));
+
+		if (!releases.isEmpty())
+		{
+			body.setText(ChangelogHtml.render(releases.get(0)));
+			body.setCaretPosition(0);
+		}
+
+		rebuildChangelogNav(nav, releases, 0, body);
+
+		final JScrollPane navScroll = new JScrollPane(nav);
+
+		navScroll.setPreferredSize(new Dimension(CHANGELOG_NAV_WIDTH, CHANGELOG_HEIGHT));
+		navScroll.getVerticalScrollBar().setUnitIncrement(16);
+
+		final JScrollPane bodyScroll = new JScrollPane(body);
+
+		bodyScroll.setPreferredSize(
+				new Dimension(CHANGELOG_WIDTH - CHANGELOG_NAV_WIDTH, CHANGELOG_HEIGHT));
+
+		final JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, navScroll, bodyScroll);
+
+		split.setDividerLocation(CHANGELOG_NAV_WIDTH);
+
+		return split;
+	}
+
+	/**
+	 * (Re)populates the changelog navigation column: one clickable row per release, and
+	 * beneath the selected one its section quick-links, each scrolling the notes to that
+	 * section.
+	 *
+	 * @param nav           the column to fill
+	 * @param releases      every release, newest first
+	 * @param selectedIndex which release's notes are showing
+	 * @param body          the pane the notes are rendered into
+	 */
+	private void rebuildChangelogNav(
+			JPanel nav, List<Changelog.Release> releases, int selectedIndex, JEditorPane body)
+	{
+		nav.removeAll();
+
+		for (int i = 0; i < releases.size(); i++)
+		{
+			final int index = i;
+			final Changelog.Release release = releases.get(i);
+			final JLabel versionRow = buildChangelogNavVersion(release.getVersion(), index == selectedIndex);
+
+			versionRow.addMouseListener(new MouseAdapter()
+			{
+				@Override
+				public void mouseClicked(MouseEvent e)
+				{
+					body.setText(ChangelogHtml.render(releases.get(index)));
+					body.setCaretPosition(0);
+					rebuildChangelogNav(nav, releases, index, body);
+				}
+			});
+			nav.add(versionRow);
+
+			if (index != selectedIndex)
+				continue;
+
+			for (ChangelogHtml.Section section : ChangelogHtml.sections(release.getBody()))
+			{
+				final JLabel link = buildChangelogNavLink(section);
+
+				link.addMouseListener(new MouseAdapter()
+				{
+					@Override
+					public void mouseClicked(MouseEvent e)
+					{
+						body.scrollToReference(section.getAnchor());
+					}
+				});
+				nav.add(link);
+			}
+		}
+
+		nav.revalidate();
+		nav.repaint();
+	}
+
+	/** @return one clickable release row; the selected release is gold, the rest muted. */
+	private JLabel buildChangelogNavVersion(String version, boolean selected)
+	{
+		final JLabel row = new JLabel(version);
+
+		row.setFont(FontManager.getRunescapeBoldFont());
+		row.setOpaque(true);
+		row.setBorder(new EmptyBorder(5, 10, 5, 8));
+		row.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		row.setAlignmentX(Component.LEFT_ALIGNMENT);
+		row.setMaximumSize(new Dimension(Integer.MAX_VALUE, row.getPreferredSize().height + 12));
+
+		final Color restFg = selected ? PricewatchColors.AVG : ColorScheme.LIGHT_GRAY_COLOR;
+		final Color restBg = selected ? ColorScheme.DARK_GRAY_COLOR : ColorScheme.DARKER_GRAY_COLOR;
+
+		row.setForeground(restFg);
+		row.setBackground(restBg);
+		installChangelogNavHover(row, restFg, restBg);
+
+		return row;
+	}
+
+	/** @return one indented, clickable section quick-link. */
+	private JLabel buildChangelogNavLink(ChangelogHtml.Section section)
+	{
+		final JLabel link = new JLabel(section.getText());
+
+		link.setFont(FontManager.getRunescapeSmallFont());
+		link.setOpaque(true);
+		link.setBorder(new EmptyBorder(2, 14 + section.getLevel() * 10, 2, 6));
+		link.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		link.setAlignmentX(Component.LEFT_ALIGNMENT);
+		link.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		link.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		link.setMaximumSize(new Dimension(Integer.MAX_VALUE, link.getPreferredSize().height + 4));
+		installChangelogNavHover(link, ColorScheme.LIGHT_GRAY_COLOR, ColorScheme.DARKER_GRAY_COLOR);
+
+		return link;
+	}
+
+	/** Adds a hover highlight to a navigation row that restores the given resting colours on exit. */
+	private static void installChangelogNavHover(JLabel label, Color restFg, Color restBg)
+	{
+		label.addMouseListener(new MouseAdapter()
+		{
+			@Override
+			public void mouseEntered(MouseEvent e)
+			{
+				label.setBackground(ColorScheme.DARK_GRAY_HOVER_COLOR);
+				label.setForeground(Color.WHITE);
+			}
+
+			@Override
+			public void mouseExited(MouseEvent e)
+			{
+				label.setBackground(restBg);
+				label.setForeground(restFg);
+			}
+		});
+	}
+
+	/**
+	 * @param color the colour to draw in
+	 * @return a small eight-pointed sparkle, drawn rather than loaded because the panel
+	 *         font renders no such glyph
+	 */
+	private static Icon sparkleIcon(Color color)
+	{
+		final int size = 14;
+		final BufferedImage image = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
+		final Graphics2D g = image.createGraphics();
+
+		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+		g.setColor(color);
+		g.setStroke(new BasicStroke(1.3f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+
+		final double centre = size / 2.0;
+		final double inner = 1.6;
+		final double outer = centre - 1.0;
+
+		for (int i = 0; i < 8; i++)
+		{
+			final double angle = Math.PI * i / 4.0;
+			final double length = i % 2 == 0 ? outer : outer - 2.2;
+			final int x1 = (int) Math.round(centre + Math.cos(angle) * inner);
+			final int y1 = (int) Math.round(centre + Math.sin(angle) * inner);
+			final int x2 = (int) Math.round(centre + Math.cos(angle) * length);
+			final int y2 = (int) Math.round(centre + Math.sin(angle) * length);
+
+			g.drawLine(x1, y1, x2, y2);
+			g.fillOval(x2 - 1, y2 - 1, 2, 2);
+		}
+
+		g.dispose();
+
+		return new ImageIcon(image);
 	}
 
 	/** Opens the sort-mode menu, with the active mode's direction offered as a toggle. */
@@ -1091,11 +1427,14 @@ public class PricewatchPanel extends PluginPanel
 		});
 	}
 
-	/** Disposes every open pop-out. Called when the plugin shuts down. */
+	/** Disposes every open pop-out, and the changelog window. Called when the plugin shuts down. */
 	public void closePopouts()
 	{
 		new ArrayList<>(popouts.values()).forEach(handle -> handle.frame.dispose());
 		popouts.clear();
+
+		if (changelogWindow != null)
+			changelogWindow.dispose();
 	}
 
 	/** Deregisters a pop-out when its window is closed. */
