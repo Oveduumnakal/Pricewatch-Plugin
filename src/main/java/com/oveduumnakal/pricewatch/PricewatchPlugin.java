@@ -662,6 +662,9 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 		if (!style.isEnabled())
 			return;
 
+		if (panel != null && panel.isEditingAlerts())
+			return;
+
 		boolean changed = false;
 		for (WatchedItem item : watchedItems.values())
 		{
@@ -1330,6 +1333,21 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 				recomputeWindowStats(item);
 				refreshPanel();
 			});
+		});
+	}
+
+	/**
+	 * Persists an item's alert rules after the panel edited them in place.
+	 *
+	 * @param itemId the item whose rules changed
+	 */
+	@Override
+	public void alertsEdited(int itemId)
+	{
+		clientThread.invokeLater(() ->
+		{
+			if (watchedItems.containsKey(itemId))
+				persistWatchedItems();
 		});
 	}
 
