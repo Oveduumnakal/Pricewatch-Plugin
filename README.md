@@ -94,7 +94,7 @@ Pricewatch only ever reports on the market. It never records how many of an item
 
 - **Jump in from an offer**
 
-  Opening a Grand Exchange offer can open that item in Pricewatch, or add a button to the offer screen that does it on click.
+  Opening a Grand Exchange offer opens that item in Pricewatch, and puts a button on the offer screen that does the same on click. Either half can be switched off under *GE Integration*.
 
   <img src="docs/img/15-ge-integration.png" alt="Clicking the Pricewatch button on a Grand Exchange offer, opening the item in the panel" width="700">
 
@@ -114,14 +114,18 @@ Pricewatch only ever reports on the market. It never records how many of an item
 
   <img src="docs/img/18-overlay-boxes.png" alt="Overlay boxes on the game screen showing watched items' prices">
 
-## Running Pricewatch alongside Stockpile
+## Pricewatch or Stockpile — not both
 
-Pricewatch started life as the market half of the [Stockpile plugin](https://github.com/Oveduumnakal/Stockpile-Plugin), and the two are designed to be run together. They are completely independent — separate settings, separate lists, and neither reads the other's data — but because they cover neighbouring ground, a few things appear twice if you install both:
+Pricewatch started life as the market half of the [Stockpile plugin](https://github.com/Oveduumnakal/Stockpile-Plugin). Stockpile still has all of it — the same watchlist, prices, charts, market information and alerts — and adds tracking on top: how many of an item you own, what you paid for it, and what you have made. Running both would be the same panel twice.
 
-- **Two right-click entries.** Stockpile adds "Track item"; Pricewatch adds its own watch option. They are worded differently so you can tell them apart.
-- **Two Grand Exchange buttons.** Both plugins can put a button on the offer screen, and they compete for the same corner. Pricewatch's is **off by default** for that reason — turn it on under *GE Integration* if you would rather use it, or if you don't run Stockpile.
+So the two are **mutually exclusive**, and RuneLite enforces it: switching one on switches the other off. Each keeps its own settings and its own list, and neither touches the other's, so going back later picks up where you left off.
 
-If you want quantities, cost basis and profit tracking, that is Stockpile's job and Pricewatch will never do it. If you only want to know what the market is doing, Pricewatch on its own is the lighter option.
+**Which one do you want?**
+
+- **Pricewatch** — you want to know what the market is doing, and nothing about your own holdings. The smaller, simpler panel. It will never count what you own or work out your profit.
+- **[Stockpile](https://github.com/Oveduumnakal/Stockpile-Plugin)** — you want all of that *and* quantities, cost basis and profit.
+
+If you are not sure, start here. Switching costs nothing.
 
 ## Links
 

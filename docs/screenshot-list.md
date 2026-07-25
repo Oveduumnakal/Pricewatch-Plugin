@@ -58,8 +58,10 @@ links in the meantime.** Filling all eighteen is a release gate.
     at-cap state instead if one is available.
 15. **`15-ge-integration.png`** (still) — an open offer screen with the injected button on
     it and the panel already showing that item, so the link between the two is visible in
-    one frame. **Capture with Stockpile also installed**, since the two-button collision is
-    the thing the README's note is about, and it has never been seen.
+    one frame. The button's geometry has never been seen in a client and now ships on by
+    default, so this is the shot most likely to expose a bug rather than record a feature.
+    (The old note here said to capture it beside Stockpile to see the two-button collision.
+    That collision can no longer happen — the plugins conflict.)
 
 ## Price alerts
 
