@@ -60,6 +60,9 @@ public class WatchedItem
 	/** Epoch-second when the current GE buy-limit window resets, or 0 when none (transient). */
 	private transient long limitResetEpoch;
 
+	/** The item's alert rules, persisted with it. Empty until the user adds one. */
+	private List<NotificationRule> notifications = new ArrayList<>();
+
 	private WatchItemMode mode = WatchItemMode.WATCH;
 	private Map<TimeWindow, PriceStats> windowStats = new EnumMap<>(TimeWindow.class);
 

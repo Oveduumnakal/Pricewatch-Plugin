@@ -10,6 +10,7 @@ import net.runelite.client.config.Config;
 import net.runelite.client.config.ConfigGroup;
 import net.runelite.client.config.ConfigItem;
 import net.runelite.client.config.ConfigSection;
+import net.runelite.client.config.Notification;
 import net.runelite.client.config.Range;
 
 /**
@@ -56,6 +57,8 @@ public interface PricewatchConfig extends Config
 	String KEY_SHOW_LINKS = "showLinks";
 	String KEY_SHOW_ALERTS = "showAlerts";
 
+	String KEY_ALERT_STYLE = "alertStyle";
+
 	String KEY_ADD_CONTEXT_MENU_OPTION = "addContextMenuOption";
 	String KEY_WATCH_ITEM_COLOR = "watchItemColor";
 	String KEY_UNWATCH_ITEM_COLOR = "unwatchItemColor";
@@ -84,11 +87,19 @@ public interface PricewatchConfig extends Config
 	)
 	String detailViewSection = "detailView";
 
+	/** How per-item price alerts are delivered when their conditions come true. */
+	@ConfigSection(
+			name = "Alerts",
+			description = "How per-item price alerts are delivered",
+			position = 3
+	)
+	String alertsSection = "alerts";
+
 	/** The right-click menu entry that adds or removes an item from the watchlist. */
 	@ConfigSection(
 			name = "Context Menu",
 			description = "The right-click option for watching an item",
-			position = 3
+			position = 4
 	)
 	String contextMenuSection = "contextMenu";
 
@@ -325,6 +336,20 @@ public interface PricewatchConfig extends Config
 	default boolean addContextMenuOption()
 	{
 		return true;
+	}
+
+	@ConfigItem(
+			keyName = KEY_ALERT_STYLE,
+			name = "Alerts",
+			description = "Master switch and delivery style for per-item price alerts. Set to Off to silence "
+					+ "every alert without deleting its rule; otherwise use the gear to choose how they "
+					+ "are delivered. Independent of \"Show Alerts\", which only places the rule editor.",
+			section = alertsSection,
+			position = 0
+	)
+	default Notification alertStyle()
+	{
+		return Notification.ON;
 	}
 
 	@ConfigItem(
