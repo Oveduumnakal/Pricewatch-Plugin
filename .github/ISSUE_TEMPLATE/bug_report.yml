@@ -1,0 +1,142 @@
+name: Bug Report
+description: Report a problem with the Pricewatch plugin
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug! The more detail you give, the faster it can be fixed.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight checklist
+      options:
+        - label: I searched existing issues and this isn't a duplicate.
+          required: true
+        - label: I'm on the latest version of the plugin and RuneLite.
+          required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Describe the bug
+      description: A clear and concise description of what the bug is.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: How can the problem be triggered?
+      placeholder: |
+        1. Go to '...'
+        2. Click on '...'
+        3. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What actually happened?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      description: Which part of the plugin is affected? (Select all that apply.)
+      multiple: true
+      options:
+        - Watchlist (adding / previewing / categories / favourites / sort / reorder / share codes)
+        - Live pricing (GE / wiki realtime / time-window values)
+        - Detail view & charts (graphs, timeframes, pop-out windows)
+        - Market info (buy limit remaining, GE tax, ratings, buy/sell pressure)
+        - Alchemy values
+        - Price alerts
+        - Panel / overlays (on-screen price boxes, ground or inventory highlights)
+        - Grand Exchange integration (offer screen button)
+        - Configuration / settings
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: items
+    attributes:
+      label: Watched item(s) involved
+      description: >
+        If the bug is specific to certain items, list them (name and/or item ID).
+        For a pricing issue, include which price line or time window was showing
+        the wrong figure.
+      placeholder: "e.g. Yew logs (ID 1515), 5 Minute Avg line showing a stale low price"
+
+  - type: input
+    id: plugin-version
+    attributes:
+      label: Plugin version
+      placeholder: "0.1"
+    validations:
+      required: true
+
+  - type: input
+    id: runelite-version
+    attributes:
+      label: RuneLite version
+      description: Configuration > About, or shown by the launcher.
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: "Windows 11 / macOS 14 / Linux"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: game-mode
+    attributes:
+      label: Game mode
+      options:
+        - Fixed
+        - Resizable classic
+        - Resizable modern
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: >
+        From `~/.runelite/logs/client.log`
+        (Windows: `%USERPROFILE%\.runelite\logs\client.log`).
+        Please remove any account or personal information first.
+      render: text
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: If applicable, add screenshots of the panel, chart, or config.
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: >
+        Anything else that helps — does it happen every time, only after a
+        certain action, or did it start after an update?
