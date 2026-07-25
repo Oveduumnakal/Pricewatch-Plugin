@@ -37,6 +37,15 @@ interface WatchlistActions
 	void setFavorite(int itemId, boolean favorite);
 
 	/**
+	 * Adds or removes an item from the on-screen overlay. An add beyond the overlay's
+	 * cap is ignored, so the caller must not assume the flag took.
+	 *
+	 * @param itemId the item to flag
+	 * @param on     whether it should appear on the overlay
+	 */
+	void setOnOverlay(int itemId, boolean on);
+
+	/**
 	 * Changes how the list is ordered.
 	 *
 	 * @param mode the new sort mode

@@ -59,6 +59,10 @@ public interface PricewatchConfig extends Config
 
 	String KEY_ALERT_STYLE = "alertStyle";
 
+	String KEY_SHOW_SCREEN_OVERLAY = "showScreenOverlay";
+	String KEY_SCREEN_OVERLAY_LAYOUT = "screenOverlayLayout";
+	String KEY_SCREEN_OVERLAY_ON_TOP = "screenOverlayOnTop";
+
 	String KEY_ADD_CONTEXT_MENU_OPTION = "addContextMenuOption";
 	String KEY_WATCH_ITEM_COLOR = "watchItemColor";
 	String KEY_UNWATCH_ITEM_COLOR = "unwatchItemColor";
@@ -95,11 +99,19 @@ public interface PricewatchConfig extends Config
 	)
 	String alertsSection = "alerts";
 
+	/** The draggable in-game boxes showing selected items' prices. */
+	@ConfigSection(
+			name = "On-screen Overlay",
+			description = "In-game price boxes for selected watched items",
+			position = 4
+	)
+	String screenOverlaySection = "screenOverlay";
+
 	/** The right-click menu entry that adds or removes an item from the watchlist. */
 	@ConfigSection(
 			name = "Context Menu",
 			description = "The right-click option for watching an item",
-			position = 4
+			position = 5
 	)
 	String contextMenuSection = "contextMenu";
 
@@ -350,6 +362,42 @@ public interface PricewatchConfig extends Config
 	default Notification alertStyle()
 	{
 		return Notification.ON;
+	}
+
+	@ConfigItem(
+			keyName = KEY_SHOW_SCREEN_OVERLAY,
+			name = "Show On-screen Overlay",
+			description = "Draw in-game price boxes for items flagged onto the overlay",
+			section = screenOverlaySection,
+			position = 0
+	)
+	default boolean showScreenOverlay()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+			keyName = KEY_SCREEN_OVERLAY_LAYOUT,
+			name = "Overlay Layout",
+			description = "Compact shows just the live buy and sell price; Standard adds the configured price line",
+			section = screenOverlaySection,
+			position = 1
+	)
+	default OverlayLayout screenOverlayLayout()
+	{
+		return OverlayLayout.STANDARD;
+	}
+
+	@ConfigItem(
+			keyName = KEY_SCREEN_OVERLAY_ON_TOP,
+			name = "Draw Over Interfaces",
+			description = "Draw the boxes above game interfaces rather than behind them",
+			section = screenOverlaySection,
+			position = 2
+	)
+	default boolean screenOverlayOnTop()
+	{
+		return false;
 	}
 
 	@ConfigItem(
