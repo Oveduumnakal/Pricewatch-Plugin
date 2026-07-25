@@ -42,6 +42,15 @@ public interface PricewatchConfig extends Config
 	String KEY_SHOW_COL_VOLUME = "showColVolume";
 	String KEY_PRICE_CHANGE_INDICATOR = "priceChangeIndicator";
 
+	String KEY_SHOW_ITEM_VALUES = "showItemValues";
+	String KEY_SHOW_MARKET_INFO = "showMarketInfo";
+	String KEY_SHOW_PRICE_OVERVIEW = "showPriceOverview";
+	String KEY_SHOW_PRICE_GRAPH = "showPriceGraph";
+	String KEY_SHOW_VOLUME_GRAPH = "showVolumeGraph";
+	String KEY_SHOW_ALCH_INFO = "showAlchInfo";
+	String KEY_SHOW_LINKS = "showLinks";
+	String KEY_SHOW_ALERTS = "showAlerts";
+
 	String KEY_ADD_CONTEXT_MENU_OPTION = "addContextMenuOption";
 	String KEY_WATCH_ITEM_COLOR = "watchItemColor";
 	String KEY_UNWATCH_ITEM_COLOR = "unwatchItemColor";
@@ -62,11 +71,19 @@ public interface PricewatchConfig extends Config
 	)
 	String watchedItemSection = "watchedItem";
 
+	/** Order and visibility of the per-item detail view sections. */
+	@ConfigSection(
+			name = "Detailed View",
+			description = "Order and visibility of the item detail view sections",
+			position = 2
+	)
+	String detailViewSection = "detailView";
+
 	/** The right-click menu entry that adds or removes an item from the watchlist. */
 	@ConfigSection(
 			name = "Context Menu",
 			description = "The right-click option for watching an item",
-			position = 2
+			position = 3
 	)
 	String contextMenuSection = "contextMenu";
 
@@ -156,6 +173,104 @@ public interface PricewatchConfig extends Config
 	default PriceIndicatorMode priceChangeIndicator()
 	{
 		return PriceIndicatorMode.CHANGE;
+	}
+
+
+
+	@ConfigItem(
+			keyName = KEY_SHOW_ITEM_VALUES,
+			name = "Show Current Values",
+			description = "Position of the Current Values section, or None to hide it",
+			section = detailViewSection,
+			position = 0
+	)
+	default SectionSlot showItemValues()
+	{
+		return SectionSlot.FIRST;
+	}
+
+	@ConfigItem(
+			keyName = KEY_SHOW_MARKET_INFO,
+			name = "Show Market Info",
+			description = "Position of the Market Info section, or None to hide it",
+			section = detailViewSection,
+			position = 1
+	)
+	default SectionSlot showMarketInfo()
+	{
+		return SectionSlot.SECOND;
+	}
+
+	@ConfigItem(
+			keyName = KEY_SHOW_PRICE_OVERVIEW,
+			name = "Show Price Overview",
+			description = "Position of the Price Overview section, or None to hide it",
+			section = detailViewSection,
+			position = 2
+	)
+	default SectionSlot showPriceOverview()
+	{
+		return SectionSlot.THIRD;
+	}
+
+	@ConfigItem(
+			keyName = KEY_SHOW_PRICE_GRAPH,
+			name = "Show Price Graph",
+			description = "Position of the Price Graph section, or None to hide it",
+			section = detailViewSection,
+			position = 3
+	)
+	default SectionSlot showPriceGraph()
+	{
+		return SectionSlot.FOURTH;
+	}
+
+	@ConfigItem(
+			keyName = KEY_SHOW_VOLUME_GRAPH,
+			name = "Show Volume Graph",
+			description = "Position of the Volume Graph section, or None to hide it",
+			section = detailViewSection,
+			position = 4
+	)
+	default SectionSlot showVolumeGraph()
+	{
+		return SectionSlot.FIFTH;
+	}
+
+	@ConfigItem(
+			keyName = KEY_SHOW_ALCH_INFO,
+			name = "Show Alchemy",
+			description = "Position of the Alchemy section, or None to hide it",
+			section = detailViewSection,
+			position = 5
+	)
+	default SectionSlot showAlchInfo()
+	{
+		return SectionSlot.SIXTH;
+	}
+
+	@ConfigItem(
+			keyName = KEY_SHOW_LINKS,
+			name = "Show Links",
+			description = "Position of the Links section, or None to hide it",
+			section = detailViewSection,
+			position = 6
+	)
+	default SectionSlot showLinks()
+	{
+		return SectionSlot.SEVENTH;
+	}
+
+	@ConfigItem(
+			keyName = KEY_SHOW_ALERTS,
+			name = "Show Alerts",
+			description = "Position of the Alerts section, or None to hide it",
+			section = detailViewSection,
+			position = 7
+	)
+	default SectionSlot showAlerts()
+	{
+		return SectionSlot.EIGHTH;
 	}
 
 	@ConfigItem(

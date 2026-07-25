@@ -73,6 +73,39 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 	/** How often at most the price cache is rewritten to config during regular refreshes. */
 	private static final Duration PRICE_CACHE_SAVE_INTERVAL = Duration.ofMinutes(5);
 
+	/** Config key to detail section, for resolving slot collisions from a change event. */
+	private static final Map<String, DetailSection> SECTION_KEYS = sectionKeys();
+
+	/** The reverse of {@link #SECTION_KEYS}, for writing a displaced section's new slot. */
+	private static final Map<DetailSection, String> SECTION_KEYS_BY_SECTION = sectionKeysBySection();
+
+	/** @return the config key that stores each detail section's slot. */
+	private static Map<String, DetailSection> sectionKeys()
+	{
+		Map<String, DetailSection> keys = new HashMap<>();
+
+		keys.put(PricewatchConfig.KEY_SHOW_ITEM_VALUES, DetailSection.ITEM_VALUES);
+		keys.put(PricewatchConfig.KEY_SHOW_MARKET_INFO, DetailSection.MARKET_INFO);
+		keys.put(PricewatchConfig.KEY_SHOW_PRICE_OVERVIEW, DetailSection.PRICE_OVERVIEW);
+		keys.put(PricewatchConfig.KEY_SHOW_PRICE_GRAPH, DetailSection.PRICE_GRAPH);
+		keys.put(PricewatchConfig.KEY_SHOW_VOLUME_GRAPH, DetailSection.VOLUME_GRAPH);
+		keys.put(PricewatchConfig.KEY_SHOW_ALCH_INFO, DetailSection.ALCHEMY);
+		keys.put(PricewatchConfig.KEY_SHOW_LINKS, DetailSection.LINKS);
+		keys.put(PricewatchConfig.KEY_SHOW_ALERTS, DetailSection.ALERTS);
+
+		return keys;
+	}
+
+	/** @return the inverse mapping of {@link #sectionKeys()}. */
+	private static Map<DetailSection, String> sectionKeysBySection()
+	{
+		Map<DetailSection, String> keys = new EnumMap<>(DetailSection.class);
+
+		SECTION_KEYS.forEach((key, section) -> keys.put(section, key));
+
+		return keys;
+	}
+
 	@Inject
 	private Client client;
 
@@ -112,7 +145,7 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 	private WatchedItem previewItem;
 
 	private final ViewState viewState = new ViewState(
-			SortMode.MANUAL, false, false, new ArrayList<>(), false, false);
+			SortMode.MANUAL, false, false, new ArrayList<>(), false, false, new ArrayList<>());
 
 	private final List<CategoryState> categories = new ArrayList<>();
 
@@ -278,7 +311,49 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 			return;
 		}
 
+		swapConflictingSection(event);
 		refreshPanel();
+	}
+
+	/**
+	 * Keeps detail-view slots unique.
+	 *
+	 * <p>Slots are assigned independently, so moving one section into a position
+	 * another already holds would leave two sections tied. Rather than refuse the
+	 * change, the displaced section takes the slot the moved one just vacated —
+	 * which is what swapping two rows looks like from the user's side.
+	 *
+	 * @param event the config change that may have caused a collision
+	 */
+	private void swapConflictingSection(ConfigChanged event)
+	{
+		final DetailSection changed = SECTION_KEYS.get(event.getKey());
+		if (changed == null || event.getOldValue() == null)
+			return;
+
+		final DetailSection displaced = DetailSections.displacedBy(sectionSlots(), changed);
+		if (displaced == null)
+			return;
+
+		configManager.setConfiguration(
+				PricewatchConfig.GROUP, SECTION_KEYS_BY_SECTION.get(displaced), event.getOldValue());
+	}
+
+	/** @return each detail section's currently configured slot. */
+	private Map<DetailSection, SectionSlot> sectionSlots()
+	{
+		Map<DetailSection, SectionSlot> slots = new EnumMap<>(DetailSection.class);
+
+		slots.put(DetailSection.ITEM_VALUES, config.showItemValues());
+		slots.put(DetailSection.MARKET_INFO, config.showMarketInfo());
+		slots.put(DetailSection.PRICE_OVERVIEW, config.showPriceOverview());
+		slots.put(DetailSection.PRICE_GRAPH, config.showPriceGraph());
+		slots.put(DetailSection.VOLUME_GRAPH, config.showVolumeGraph());
+		slots.put(DetailSection.ALCHEMY, config.showAlchInfo());
+		slots.put(DetailSection.LINKS, config.showLinks());
+		slots.put(DetailSection.ALERTS, config.showAlerts());
+
+		return slots;
 	}
 
 	/**
@@ -1065,6 +1140,17 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 	}
 
 	/**
+	 * Fetches an item's full history so its detail view can be drawn.
+	 *
+	 * @param itemId the item whose detail view was opened
+	 */
+	@Override
+	public void requestDetailData(int itemId)
+	{
+		requestSeries(itemId);
+	}
+
+	/**
 	 * @return a shareable code for the current watchlist and its categories
 	 */
 	@Override
@@ -1278,7 +1364,8 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 		final WatchedItem preview = previewItem;
 		final ViewState view = new ViewState(
 				viewState.getSortMode(), viewState.isSortReversed(), viewState.isCompact(),
-				new ArrayList<>(categories), favoritesCollapsed, uncategorizedCollapsed);
+				new ArrayList<>(categories), favoritesCollapsed, uncategorizedCollapsed,
+				DetailSections.ordered(sectionSlots()));
 
 		SwingUtilities.invokeLater(() -> panel.rebuild(snapshot, preview, view));
 	}
