@@ -59,6 +59,10 @@ public interface PricewatchConfig extends Config
 
 	String KEY_ALERT_STYLE = "alertStyle";
 
+	String KEY_HIGHLIGHT_WATCHED_ITEMS = "highlightWatchedItems";
+	String KEY_HIGHLIGHT_COLOR = "highlightColor";
+	String KEY_GLOW_EFFECT = "glowEffect";
+
 	String KEY_SHOW_SCREEN_OVERLAY = "showScreenOverlay";
 	String KEY_SCREEN_OVERLAY_LAYOUT = "screenOverlayLayout";
 	String KEY_SCREEN_OVERLAY_ON_TOP = "screenOverlayOnTop";
@@ -107,11 +111,19 @@ public interface PricewatchConfig extends Config
 	)
 	String screenOverlaySection = "screenOverlay";
 
+	/** Outlining watched items where they appear in the world, inventory and bank. */
+	@ConfigSection(
+			name = "Highlights",
+			description = "Outline watched items on the ground and in the inventory or bank",
+			position = 5
+	)
+	String highlightSection = "highlight";
+
 	/** The right-click menu entry that adds or removes an item from the watchlist. */
 	@ConfigSection(
 			name = "Context Menu",
 			description = "The right-click option for watching an item",
-			position = 5
+			position = 6
 	)
 	String contextMenuSection = "contextMenu";
 
@@ -398,6 +410,42 @@ public interface PricewatchConfig extends Config
 	default boolean screenOverlayOnTop()
 	{
 		return false;
+	}
+
+	@ConfigItem(
+			keyName = KEY_HIGHLIGHT_WATCHED_ITEMS,
+			name = "Highlight Watched Items",
+			description = "Where watched items are outlined: on the ground, in the inventory and bank, both, or off",
+			section = highlightSection,
+			position = 0
+	)
+	default HighlightMode highlightWatchedItems()
+	{
+		return HighlightMode.OFF;
+	}
+
+	@ConfigItem(
+			keyName = KEY_HIGHLIGHT_COLOR,
+			name = "Highlight Colour",
+			description = "Colour of the outline drawn around watched items",
+			section = highlightSection,
+			position = 1
+	)
+	default Color highlightColor()
+	{
+		return new Color(0x7a, 0x9d, 0xd3);
+	}
+
+	@ConfigItem(
+			keyName = KEY_GLOW_EFFECT,
+			name = "Glow Pulse",
+			description = "How fast the highlight pulses, or Off for a steady outline",
+			section = highlightSection,
+			position = 2
+	)
+	default GlowSpeed glowEffect()
+	{
+		return GlowSpeed.OFF;
 	}
 
 	@ConfigItem(
