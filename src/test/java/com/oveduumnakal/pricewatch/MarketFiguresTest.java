@@ -131,6 +131,22 @@ public class MarketFiguresTest
 	}
 
 	@Test
+	public void aCountdownDropsUnitsItDoesNotNeed()
+	{
+		assertEquals("12s", MarketFigures.formatCountdown(12));
+		assertEquals("43m", MarketFigures.formatCountdown(43 * 60));
+		assertEquals("2hr 14m", MarketFigures.formatCountdown(2 * 3600 + 14 * 60));
+		assertEquals("3hr 0m", MarketFigures.formatCountdown(3 * 3600));
+	}
+
+	@Test
+	public void anElapsedCountdownReadsAsNow()
+	{
+		assertEquals("now", MarketFigures.formatCountdown(0));
+		assertEquals("now", MarketFigures.formatCountdown(-90));
+	}
+
+	@Test
 	public void signedValuesMarkAProfitExplicitly()
 	{
 		assertEquals("+1,500 gp", MarketFigures.signed(1500));

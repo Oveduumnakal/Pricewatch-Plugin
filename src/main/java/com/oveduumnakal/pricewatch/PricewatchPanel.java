@@ -581,8 +581,7 @@ public class PricewatchPanel extends PluginPanel
 				ColorScheme.LIGHT_GRAY_COLOR, "2% of the sale price, nothing under 50gp, capped at 5M"));
 
 		block.add(infoCaption("Buy limit"));
-		block.add(infoValue(item.getBuyLimit() > 0 ? GpFormat.grouped(item.getBuyLimit()) : "-",
-				ColorScheme.LIGHT_GRAY_COLOR, "How many you may buy per 4-hour window"));
+		block.add(buyLimitValue(item, now));
 
 		block.add(infoCaption("Last bought"));
 		block.add(tradeTime(item.getLatestHighTime(), now, threshold));
@@ -597,6 +596,31 @@ public class PricewatchPanel extends PluginPanel
 		section.add(buildRatings(item), BorderLayout.CENTER);
 
 		return section;
+	}
+
+	/**
+	 * @return the buy-limit cell: {@code bought / limit} with a reset countdown once
+	 *         purchases have been seen this window, the plain limit while untouched,
+	 *         and {@code -} for an item the GE does not limit
+	 */
+	private static JLabel buyLimitValue(WatchedItem item, long now)
+	{
+		final int limit = item.getBuyLimit();
+		if (limit <= 0)
+			return infoValue("-", ColorScheme.LIGHT_GRAY_COLOR, "This item has no GE buy limit");
+
+		if (item.getLimitResetEpoch() <= 0)
+		{
+			return infoValue(GpFormat.grouped(limit), ColorScheme.LIGHT_GRAY_COLOR,
+					"How many you may buy per 4-hour window");
+		}
+
+		final int bought = item.getLimitBought();
+		final String text = GpFormat.grouped(bought) + " / " + GpFormat.grouped(limit);
+		final String tooltip = "Bought this window — resets in "
+				+ MarketFigures.formatCountdown(item.getLimitResetEpoch() - now);
+
+		return infoValue(text, bought >= limit ? PricewatchColors.LOW : ColorScheme.LIGHT_GRAY_COLOR, tooltip);
 	}
 
 	/** @return a trade-time value, dimmed when the timestamp has gone stale. */

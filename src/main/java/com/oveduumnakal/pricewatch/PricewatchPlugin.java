@@ -30,9 +30,12 @@ import lombok.extern.slf4j.Slf4j;
 
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
+import net.runelite.api.GrandExchangeOffer;
+import net.runelite.api.GrandExchangeOfferState;
 import net.runelite.api.MenuAction;
 import net.runelite.api.MenuEntry;
 import net.runelite.api.events.GameStateChanged;
+import net.runelite.api.events.GrandExchangeOfferChanged;
 import net.runelite.api.events.MenuOpened;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.widgets.Widget;
@@ -70,12 +73,17 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 
 	private static final Type PRICE_CACHE_TYPE = new TypeToken<Map<Integer, CachedPrice>>(){}.getType();
 
+	private static final Type GE_LIMITS_TYPE = new TypeToken<Map<Integer, long[]>>(){}.getType();
+
 	private static final int NATURE_RUNE_ID = 561;
 
 	private static final int FIRE_RUNE_ID = 554;
 
 	/** How often at most the price cache is rewritten to config during regular refreshes. */
 	private static final Duration PRICE_CACHE_SAVE_INTERVAL = Duration.ofMinutes(5);
+
+	/** How often at most the buy-limit windows are rewritten to config as fills arrive. */
+	private static final Duration GE_STATE_SAVE_INTERVAL = Duration.ofMinutes(1);
 
 	/** Config key to detail section, for resolving slot collisions from a change event. */
 	private static final Map<String, DetailSection> SECTION_KEYS = sectionKeys();
@@ -167,6 +175,14 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 
 	private Instant lastPriceCacheSave;
 
+	/** Turns cumulative GE offer updates into the discrete buy fills the limit counts. */
+	private final GeOfferTracker geOfferTracker = new GeOfferTracker();
+
+	/** Per-item rolling 4-hour buy-limit windows, persisted to the RS profile. */
+	private final BuyLimitWindows buyLimits = new BuyLimitWindows();
+
+	private Instant lastGeStateSave;
+
 	/**
 	 * Serializable snapshot of a watched item, stored as JSON in the RS profile config.
 	 * Package-private so {@code PersistedSchemaSnapshotTest} can guard its shape; any
@@ -248,11 +264,12 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 		scheduleRefresh();
 	}
 
-	/** Persists the price cache, stops the refresh task and clears all in-memory state. */
+	/** Persists the price cache and buy-limit windows, stops the refresh task and clears all in-memory state. */
 	@Override
 	protected void shutDown()
 	{
 		persistPriceCache();
+		persistGeState();
 
 		if (priceRefreshTask != null)
 		{
@@ -272,22 +289,38 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 		mappingsLoaded = false;
 		itemsLoaded = false;
 		lastPriceCacheSave = null;
+		lastGeStateSave = null;
+		geOfferTracker.clear();
+		buyLimits.clear();
 		shareCodec = null;
 		navButton = null;
 		panel = null;
 	}
 
 	/**
-	 * Loads the watchlist and hydrates its cached prices once logged in. The
-	 * RS-profile config is not readable at {@code startUp} on the login screen, so
-	 * this is the only place the load can happen.
+	 * Loads the watchlist, hydrates its cached prices and restores the buy-limit
+	 * windows once logged in. The RS-profile config is not readable at
+	 * {@code startUp} on the login screen, so this is the only place the load can
+	 * happen.
+	 *
+	 * <p>Leaving the world drops the GE slot baselines, so the offer replay that
+	 * follows the next login re-seeds them and emits nothing. That is what keeps an
+	 * offer which progressed while logged out from being counted as a fresh purchase.
 	 *
 	 * @param event the client's game state change
 	 */
 	@Subscribe
 	public void onGameStateChanged(GameStateChanged event)
 	{
-		if (event.getGameState() != GameState.LOGGED_IN || itemsLoaded)
+		final GameState state = event.getGameState();
+
+		if (state == GameState.LOGIN_SCREEN || state == GameState.HOPPING || state == GameState.CONNECTION_LOST)
+		{
+			geOfferTracker.clear();
+			return;
+		}
+
+		if (state != GameState.LOGGED_IN || itemsLoaded)
 			return;
 
 		itemsLoaded = true;
@@ -295,6 +328,7 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 		loadCategories();
 		loadPersistedItems();
 		hydratePriceCache();
+		loadGeState();
 		refreshPanel();
 	}
 
@@ -433,6 +467,53 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 		}
 
 		return -1;
+	}
+
+	/**
+	 * Feeds GE offer progress to {@link GeOfferTracker} and acts on what it derives.
+	 *
+	 * <p>The client reports each slot's totals cumulatively, so the tracker turns them
+	 * into discrete increments. Every derived event is offered to {@link #handleGeEvent},
+	 * which keeps only the buy fills.
+	 *
+	 * @param event the client's offer change
+	 */
+	@Subscribe
+	public void onGrandExchangeOfferChanged(GrandExchangeOfferChanged event)
+	{
+		final GrandExchangeOffer offer = event.getOffer();
+		if (offer == null)
+			return;
+
+		final GrandExchangeOfferState state = offer.getState();
+		final boolean buying = state == GrandExchangeOfferState.BUYING
+				|| state == GrandExchangeOfferState.BOUGHT
+				|| state == GrandExchangeOfferState.CANCELLED_BUY;
+		final boolean cancelled = state == GrandExchangeOfferState.CANCELLED_BUY
+				|| state == GrandExchangeOfferState.CANCELLED_SELL;
+		final boolean empty = state == GrandExchangeOfferState.EMPTY;
+
+		for (GeOfferTracker.Event e : geOfferTracker.onOffer(event.getSlot(), offer.getItemId(),
+				buying, cancelled, empty, offer.getTotalQuantity(), offer.getQuantitySold(), offer.getSpent()))
+			handleGeEvent(e);
+	}
+
+	/**
+	 * Counts a buy fill against the item's 4-hour limit window and repaints, ignoring
+	 * every other derived event. Placements, cancellations and the whole sell side say
+	 * something about what you hold rather than what the market did, so nothing here
+	 * looks at them.
+	 *
+	 * @param e one event derived from an offer update
+	 */
+	private void handleGeEvent(GeOfferTracker.Event e)
+	{
+		if (e.kind != GeOfferTracker.Kind.BUY || e.type != GeOfferTracker.Type.FILL)
+			return;
+
+		buyLimits.record(e.itemId, e.quantity, Instant.now().getEpochSecond());
+		scheduleGeStateSave();
+		refreshPanel();
 	}
 
 	/** (Re)schedules the recurring price refresh at the configured rate (min 30s), replacing any prior task. */
@@ -1395,11 +1476,68 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 		}
 	}
 
+	/** Writes the buy-limit windows to the RS profile config. */
+	private void persistGeState()
+	{
+		lastGeStateSave = Instant.now();
+		configManager.setRSProfileConfiguration(PricewatchConfig.GROUP, PricewatchConfig.KEY_GE_BUY_LIMITS,
+				gson.toJson(buyLimits.snapshot(), GE_LIMITS_TYPE));
+	}
+
+	/**
+	 * Restores the buy-limit windows from the RS profile config, defaulting to empty.
+	 * Windows that expired while logged out are dropped on the way in.
+	 */
+	private void loadGeState()
+	{
+		String saved = configManager.getRSProfileConfiguration(
+				PricewatchConfig.GROUP, PricewatchConfig.KEY_GE_BUY_LIMITS);
+		if (saved == null || saved.trim().isEmpty())
+		{
+			buyLimits.clear();
+			return;
+		}
+
+		Map<Integer, long[]> limits = null;
+		try
+		{
+			limits = gson.fromJson(saved, GE_LIMITS_TYPE);
+		}
+		catch (JsonSyntaxException e)
+		{
+			log.warn("Failed to parse persisted GE buy limits; ignoring", e);
+		}
+
+		buyLimits.restore(limits, Instant.now().getEpochSecond());
+	}
+
+	/** Persists the buy-limit windows at most once per {@link #GE_STATE_SAVE_INTERVAL}. */
+	private void scheduleGeStateSave()
+	{
+		if (lastGeStateSave == null
+				|| Duration.between(lastGeStateSave, Instant.now()).compareTo(GE_STATE_SAVE_INTERVAL) >= 0)
+			persistGeState();
+	}
+
+	/** Sets the item's transient buy-limit fields from its window, clearing them when none is open. */
+	private void applyBuyLimitFields(WatchedItem item, long now)
+	{
+		item.setLimitBought(buyLimits.bought(item.getItemId(), now));
+		item.setLimitResetEpoch(buyLimits.resetEpoch(item.getItemId(), now));
+	}
+
 	/** Pushes the current watchlist into the panel on the Swing EDT. */
 	private void refreshPanel()
 	{
 		if (panel == null)
 			return;
+
+		final long now = Instant.now().getEpochSecond();
+		for (WatchedItem item : watchedItems.values())
+			applyBuyLimitFields(item, now);
+
+		if (previewItem != null)
+			applyBuyLimitFields(previewItem, now);
 
 		final List<WatchedItem> snapshot = new ArrayList<>(watchedItems.values());
 		final WatchedItem preview = previewItem;
