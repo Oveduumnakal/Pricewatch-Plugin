@@ -64,7 +64,6 @@ public interface PricewatchConfig extends Config
 	String KEY_GE_FOCUS_PANEL = "geFocusPanel";
 
 	String KEY_SHOW_SCREEN_OVERLAY = "showScreenOverlay";
-	String KEY_SCREEN_OVERLAY_LAYOUT = "screenOverlayLayout";
 	String KEY_SCREEN_OVERLAY_ON_TOP = "screenOverlayOnTop";
 
 	String KEY_ADD_CONTEXT_MENU_OPTION = "addContextMenuOption";
@@ -390,18 +389,6 @@ public interface PricewatchConfig extends Config
 	default boolean showScreenOverlay()
 	{
 		return true;
-	}
-
-	@ConfigItem(
-			keyName = KEY_SCREEN_OVERLAY_LAYOUT,
-			name = "Overlay Layout",
-			description = "Compact shows just the live buy and sell price; Standard adds the configured price line",
-			section = screenOverlaySection,
-			position = 1
-	)
-	default OverlayLayout screenOverlayLayout()
-	{
-		return OverlayLayout.STANDARD;
 	}
 
 	@ConfigItem(
