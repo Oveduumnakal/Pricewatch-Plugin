@@ -14,6 +14,7 @@ import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.Graphics2D;
+import java.awt.Image;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.GridLayout;
@@ -85,6 +86,7 @@ import net.runelite.client.ui.FontManager;
 import net.runelite.client.ui.PluginPanel;
 import net.runelite.client.ui.components.IconTextField;
 import net.runelite.client.util.AsyncBufferedImage;
+import net.runelite.client.util.ImageUtil;
 import net.runelite.client.util.LinkBrowser;
 import net.runelite.http.api.item.ItemPrice;
 
@@ -207,6 +209,15 @@ public class PricewatchPanel extends PluginPanel
 	 * only matter while rearranging it.
 	 */
 	private boolean reorderMode;
+
+	/**
+	 * Whether the detail view is waiting for an item the plugin has not handed back yet.
+	 *
+	 * <p>Opening a preview from the search results asks the plugin for the item and draws
+	 * immediately, so the first redraw runs before the item exists. Without this the guard
+	 * that closes a detail view for a vanished item would cancel the open on that first pass.
+	 */
+	private boolean awaitingDetailItem;
 
 	/** When prices were last applied, driving the footer countdown. */
 	private volatile Instant lastPriceRefresh;
@@ -1025,6 +1036,7 @@ public class PricewatchPanel extends PluginPanel
 	public void openDetail(int itemId)
 	{
 		detailItemId = itemId;
+		awaitingDetailItem = true;
 		actions.requestDetailData(itemId);
 		redraw();
 	}
@@ -1033,6 +1045,7 @@ public class PricewatchPanel extends PluginPanel
 	private void closeDetail()
 	{
 		detailItemId = null;
+		awaitingDetailItem = false;
 		redraw();
 	}
 
@@ -1068,14 +1081,16 @@ public class PricewatchPanel extends PluginPanel
 
 		final WatchedItem detail = detailItem();
 
-		if (detailItemId != null && detail == null)
-			detailItemId = null;
-
 		if (detail != null)
 		{
+			awaitingDetailItem = false;
 			drawDetail(detail);
+
 			return;
 		}
+
+		if (detailItemId != null && !awaitingDetailItem)
+			detailItemId = null;
 
 		drawList();
 	}
@@ -2734,8 +2749,10 @@ public class PricewatchPanel extends PluginPanel
 		name.setFont(FontManager.getRunescapeSmallFont());
 		EllipsisText.set(name, itemName);
 
-		final JButton view = smallButton("◉", ColorScheme.LIGHT_GRAY_COLOR, "View prices only");
+		final JButton view = smallButton("", ColorScheme.LIGHT_GRAY_COLOR,
+				"View prices without watching the item");
 
+		view.setIcon(eyeIcon(12));
 		view.addActionListener(e -> pick(itemId, WatchItemMode.PREVIEW));
 
 		final JButton add = smallButton("+", ADD_GREEN, "Watch item");
@@ -2754,12 +2771,42 @@ public class PricewatchPanel extends PluginPanel
 		return row;
 	}
 
-	/** Hands a chosen search result to the plugin and clears the search field. */
+	/**
+	 * Hands a chosen search result to the plugin and clears the search field.
+	 *
+	 * <p>A preview opens straight into the detail view, which is the whole point of viewing
+	 * an item without watching it — otherwise the only visible effect is a row appearing in a
+	 * Preview section, which reads as having added the item after all.
+	 */
 	private void pick(int itemId, WatchItemMode mode)
 	{
 		actions.addWatchedItem(mode, itemId);
 		searchField.setText("");
 		searchResults.setVisible(false);
+
+		if (mode == WatchItemMode.PREVIEW)
+			openDetail(itemId);
+	}
+
+	/**
+	 * Loads the bundled eye icon for the view-only button.
+	 *
+	 * @param size the square edge to scale to
+	 * @return the icon, or a blank one of the same size if the resource will not load, so a
+	 *         missing image costs the button its picture rather than the panel its search row
+	 */
+	private Icon eyeIcon(int size)
+	{
+		try
+		{
+			final BufferedImage img = ImageUtil.loadImageResource(getClass(), "eye.png");
+
+			return new ImageIcon(img.getScaledInstance(size, size, Image.SCALE_SMOOTH));
+		}
+		catch (RuntimeException ex)
+		{
+			return new ImageIcon(new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB));
+		}
 	}
 
 	/**
