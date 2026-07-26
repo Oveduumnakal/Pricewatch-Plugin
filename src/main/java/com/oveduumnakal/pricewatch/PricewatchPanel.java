@@ -7,12 +7,15 @@ package com.oveduumnakal.pricewatch;
 import java.awt.BasicStroke;
 import java.awt.BorderLayout;
 import java.awt.Color;
+import java.awt.Container;
 import java.awt.Component;
 import java.awt.Cursor;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.Graphics2D;
+import java.awt.GridBagConstraints;
+import java.awt.GridBagLayout;
 import java.awt.GridLayout;
 import java.awt.Insets;
 import java.awt.Point;
@@ -23,12 +26,16 @@ import java.awt.event.MouseEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.awt.image.BufferedImage;
+import java.text.NumberFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
@@ -106,6 +113,30 @@ public class PricewatchPanel extends PluginPanel
 
 	private static final Color OVERLAY_ON = new Color(0x7a, 0x9d, 0xd3);
 
+	/** Grey used for traded-volume figures, which carry no up/down meaning of their own. */
+	private static final Color COLOR_VOLUME = new Color(200, 200, 200);
+
+	/** Fully transparent, so a hidden row button keeps its space without being drawn. */
+	private static final Color HIDDEN = new Color(0, 0, 0, 0);
+
+	/** Square edge of a row's quick buttons. */
+	private static final int BUTTON_SIZE = 20;
+
+	/** Indent that lines a row's figures up under its name rather than under its icon. */
+	private static final int PRICES_LEFT_PAD = 2;
+
+	/** Client property holding the colour a row button returns to when its row is hovered. */
+	private static final String BUTTON_RESTING_COLOR = "pricewatchButtonResting";
+
+	/** Client property marking a row button that carries a painted icon rather than a glyph. */
+	private static final String BUTTON_IS_ICON = "pricewatchButtonIsIcon";
+
+	/** Client property carrying the item id a row card stands for. */
+	private static final String ROW_ITEM_ID = "pricewatchItemId";
+
+	/** Full-number formatting for the tooltips behind each short-format figure. */
+	private static final NumberFormat NUMBER_FORMAT = NumberFormat.getIntegerInstance(Locale.US);
+
 	private static final int GRAPH_HEIGHT = 140;
 
 	private static final int ALERTS_TABLE_HEIGHT = 96;
@@ -157,6 +188,15 @@ public class PricewatchPanel extends PluginPanel
 
 	/** Where each rendered row sits, so a drop point can be resolved back to an item. */
 	private final List<RowRef> rowRefs = new ArrayList<>();
+
+	/**
+	 * The item whose row the pointer is currently over, or -1.
+	 *
+	 * <p>Rows are rebuilt wholesale on every price refresh, so this survives the rebuild and
+	 * lets the replacement row come back with its buttons already revealed instead of blinking
+	 * out from under the pointer.
+	 */
+	private int hoveredItemId = -1;
 
 	private List<WatchedItem> lastItems = new ArrayList<>();
 
@@ -1599,10 +1639,21 @@ public class PricewatchPanel extends PluginPanel
 	/** @return one watchlist row: icon on the left, name over a price line, remove button on the right. */
 	private JPanel buildRow(WatchedItem item, PriceLineOptions options, boolean isPreview)
 	{
-		final JPanel row = new JPanel(new BorderLayout(6, 0));
+		final boolean hovered = item.getItemId() == hoveredItemId;
 
-		row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		row.setBorder(new EmptyBorder(lastView.isCompact() ? 2 : 4, 4, lastView.isCompact() ? 2 : 4, 4));
+		final JPanel card = new JPanel(new BorderLayout(6, 0))
+		{
+			/** Keeps a row from stretching vertically to fill the list's spare space. */
+			@Override
+			public Dimension getMaximumSize()
+			{
+				return new Dimension(Integer.MAX_VALUE, getPreferredSize().height);
+			}
+		};
+
+		card.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		card.setBorder(new EmptyBorder(lastView.isCompact() ? 2 : 6, 8, lastView.isCompact() ? 2 : 6, 8));
+		card.putClientProperty(ROW_ITEM_ID, item.getItemId());
 
 		final JLabel name = new JLabel();
 
@@ -1610,50 +1661,201 @@ public class PricewatchPanel extends PluginPanel
 		name.setFont(FontManager.getRunescapeSmallFont());
 		EllipsisText.set(name, item.getName());
 
-		final String line = lastView.isCompact() ? null : priceText(item, options);
-		final JPanel text = new JPanel(new GridLayout(line == null ? 1 : 2, 1));
+		final RowButtons buttons = buildRowButtons(item, isPreview, hovered);
 
-		text.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		text.add(name);
+		final JPanel nameRow = new JPanel(new BorderLayout(6, 0));
 
-		if (line != null)
+		nameRow.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		nameRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+		nameRow.add(name, BorderLayout.CENTER);
+		nameRow.add(buttons.panel, BorderLayout.EAST);
+
+		final JPanel centre = new JPanel();
+
+		centre.setLayout(new BoxLayout(centre, BoxLayout.Y_AXIS));
+		centre.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		centre.add(nameRow);
+
+		if (!lastView.isCompact())
 		{
-			final JLabel prices = new JLabel(line);
+			final JComponent figures = buildRowFigures(item, options);
 
-			prices.setForeground(priceColor(item));
-			prices.setFont(prices.getFont().deriveFont(Font.PLAIN, 11f));
-			prices.setToolTipText(priceTooltip(item, options));
-			text.add(prices);
+			figures.setAlignmentX(Component.LEFT_ALIGNMENT);
+			centre.add(figures);
 		}
 
-		row.add(buildRowLeading(item, isPreview), BorderLayout.WEST);
-		row.add(text, BorderLayout.CENTER);
-		row.add(buildRowButtons(item, isPreview), BorderLayout.EAST);
+		card.add(buildRowLeading(item, isPreview), BorderLayout.WEST);
+		card.add(centre, BorderLayout.CENTER);
 
-		text.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-		text.addMouseListener(new OpenDetailListener(item.getItemId()));
+		installRowHover(card, item, buttons);
 
-		return row;
+		return card;
 	}
 
-	/** Opens an item's detail view when its name or price line is clicked. */
-	private final class OpenDetailListener extends MouseAdapter
+	/**
+	 * Builds a row's second line: each visible figure unlabelled, coloured by what it is
+	 * rather than captioned, and carrying its own hover tint and full-value tooltip.
+	 *
+	 * <p>A {@link GridBagLayout} with equal weights keeps the columns aligned down the list
+	 * and, unlike the single HTML line this replaced, lets a wide volume figure share the
+	 * width instead of pushing the rest of the row out of the panel.
+	 *
+	 * @return the figures, or a single status label when there is nothing to show
+	 */
+	private JComponent buildRowFigures(WatchedItem item, PriceLineOptions options)
 	{
-		private final int itemId;
+		final String status = rowStatus(item, options);
 
-		/**
-		 * @param itemId the item this row shows
-		 */
-		OpenDetailListener(int itemId)
+		if (status != null)
 		{
-			this.itemId = itemId;
+			final JLabel label = new JLabel(status);
+
+			label.setFont(FontManager.getRunescapeSmallFont());
+			label.setForeground(item.isPriceLoadFailed() ? PricewatchColors.LOW : PricewatchColors.MUTED);
+			label.setBorder(new EmptyBorder(1, PRICES_LEFT_PAD, 0, 0));
+
+			return label;
 		}
 
-		@Override
-		public void mouseClicked(MouseEvent e)
+		final PriceStats stats = statsFor(item, options.window);
+		final boolean live = options.window == TimeWindow.LIVE;
+
+		final JPanel figures = new JPanel(new GridBagLayout());
+
+		figures.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		figures.setBorder(new EmptyBorder(1, PRICES_LEFT_PAD, 0, 0));
+
+		final GridBagConstraints c = new GridBagConstraints();
+
+		c.fill = GridBagConstraints.HORIZONTAL;
+		c.insets = new Insets(0, 0, 0, 4);
+		c.gridy = 0;
+		c.weightx = 1;
+		c.anchor = GridBagConstraints.WEST;
+
+		int column = 0;
+
+		if (options.high)
 		{
-			openDetail(itemId);
+			c.gridx = column++;
+			figures.add(valueCell(stats.getHigh(), "High", PricewatchColors.HIGH,
+					PricewatchColors.TINT_HIGH, live ? item.getHighDelta() : 0, options), c);
 		}
+
+		if (options.low)
+		{
+			c.gridx = column++;
+			figures.add(valueCell(stats.getLow(), "Low", PricewatchColors.LOW,
+					PricewatchColors.TINT_LOW, live ? item.getLowDelta() : 0, options), c);
+		}
+
+		if (options.avg)
+		{
+			c.gridx = column++;
+			figures.add(valueCell(stats.getAvg(), "Avg", PricewatchColors.AVG,
+					PricewatchColors.TINT_AVG, live ? item.getAvgDelta() : 0, options), c);
+		}
+
+		if (options.volume)
+		{
+			c.gridx = column++;
+			figures.add(buildVolumeCell(volumeFor(item, options.window)), c);
+		}
+
+		return figures;
+	}
+
+	/**
+	 * @return the placeholder a row shows instead of figures, or {@code null} when the
+	 *         item has prices to draw
+	 */
+	static String rowStatus(WatchedItem item, PriceLineOptions options)
+	{
+		if (options.window == TimeWindow.NONE || !options.anyColumn())
+			return "No figures selected";
+
+		if (!item.isTradeable())
+			return "Not tradeable";
+
+		if (item.isPriceLoadFailed())
+			return "Unable to load price";
+
+		if (!item.hasPrices())
+			return "Prices loading...";
+
+		return null;
+	}
+
+	/**
+	 * @return one price figure: short-format text in its own colour, a full-value tooltip,
+	 *         and a hover tint, dimmed when the underlying trade is stale
+	 */
+	private JLabel valueCell(long value, String label, Color colour, Color tint, int delta,
+			PriceLineOptions options)
+	{
+		final JLabel cell = new JLabel();
+		final String text = GpFormat.shortValue(value);
+
+		cell.setFont(FontManager.getRunescapeSmallFont());
+		cell.setForeground(options.movementColour(delta, colour));
+		cell.setText(text);
+		cell.setToolTipText(label + ": " + NUMBER_FORMAT.format(value) + " gp");
+
+		final HoverTintListener listener = new HoverTintListener(cell, text, tint);
+
+		cell.addMouseListener(listener);
+		SwingUtilities.invokeLater(listener::applyIfHovered);
+
+		return cell;
+	}
+
+	/** @return the traded-volume figure, or a dash when no window carries volume yet. */
+	private JLabel buildVolumeCell(long volume)
+	{
+		final JLabel cell = new JLabel();
+		final String text = volume > 0 ? GpFormat.shortValue(volume) : "-";
+
+		cell.setFont(FontManager.getRunescapeSmallFont());
+		cell.setForeground(COLOR_VOLUME);
+		cell.setText(text);
+		cell.setToolTipText(volume > 0
+				? "Volume: " + NUMBER_FORMAT.format(volume)
+				: "Volume: not reported for this window yet");
+
+		final HoverTintListener listener = new HoverTintListener(cell, text, PricewatchColors.TINT_VOLUME);
+
+		cell.addMouseListener(listener);
+		SwingUtilities.invokeLater(listener::applyIfHovered);
+
+		return cell;
+	}
+
+	/**
+	 * Resolves the volume to show for a window.
+	 *
+	 * <p>The wiki's latest-price endpoint carries no volume, so the default Live line would
+	 * always render a dash and the Show Volume setting would look broken. Live therefore
+	 * borrows the widest window that does report volume, which is what someone enabling the
+	 * column is asking for — how much of this item trades.
+	 *
+	 * @return the traded volume, or 0 when no window has reported one yet
+	 */
+	static long volumeFor(WatchedItem item, TimeWindow window)
+	{
+		if (window != TimeWindow.LIVE)
+		{
+			final PriceStats stats = item.getWindowStats().get(window);
+
+			return stats == null ? 0 : stats.getVolume();
+		}
+
+		return Stream.of(TimeWindow.H24, TimeWindow.H6, TimeWindow.H1, TimeWindow.M5)
+				.map(item.getWindowStats()::get)
+				.filter(Objects::nonNull)
+				.mapToLong(PriceStats::getVolume)
+				.filter(volume -> volume > 0)
+				.findFirst()
+				.orElse(0);
 	}
 
 	/** @return the item's icon, loaded asynchronously into a fixed-size label. */
@@ -1726,72 +1928,238 @@ public class PricewatchPanel extends PluginPanel
 				.orElse(CategoryState.UNCATEGORIZED_KEY);
 	}
 
-	/** @return the trailing button cluster for a row: add for a preview, remove for a watched item. */
-	private JPanel buildRowButtons(WatchedItem item, boolean isPreview)
+	/**
+	 * A row's quick buttons, kept together so the hover wiring can reveal and hide them
+	 * without hunting through the card's children.
+	 */
+	private static final class RowButtons
 	{
-		final JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
+		private final JPanel panel;
+		private final JLabel star;
+		private final JLabel overlay;
+		private final JLabel remove;
 
-		buttons.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		RowButtons(JPanel panel, JLabel star, JLabel overlay, JLabel remove)
+		{
+			this.panel = panel;
+			this.star = star;
+			this.overlay = overlay;
+			this.remove = remove;
+		}
+	}
+
+	/**
+	 * Builds a row's quick buttons: favourite, on-screen overlay, and remove.
+	 *
+	 * <p>They rest transparent and are revealed by {@link #installRowHover} when the pointer
+	 * enters the row. Hiding them by colour rather than by visibility keeps them occupying
+	 * their space, so a row does not resize on hover and the rows beneath it do not jump.
+	 *
+	 * @param hovered whether the row was hovered when this rebuild started, so a refresh
+	 *                under the pointer does not blank the buttons the user is aiming at
+	 */
+	private RowButtons buildRowButtons(WatchedItem item, boolean isPreview, boolean hovered)
+	{
+		final JPanel panel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
+
+		panel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 
 		if (isPreview)
 		{
 			final JButton add = smallButton("+", ADD_GREEN, "Add to watchlist");
 
 			add.addActionListener(e -> actions.addWatchedItem(WatchItemMode.WATCH, item.getItemId()));
-			buttons.add(add);
+			panel.add(add);
 
-			return buttons;
+			return new RowButtons(panel, null, null, null);
 		}
 
-		final boolean starred = item.isFavorite();
-		final JButton star = smallButton(starred ? "★" : "☆",
-				starred ? STAR_GOLD : ColorScheme.MEDIUM_GRAY_COLOR,
-				starred ? "Remove from favourites" : "Add to favourites");
+		final JLabel star = buildFavoriteStar(item, hovered);
+		final JLabel overlay = buildOverlayToggle(item, hovered);
+		final JLabel remove = iconButton("×", hovered ? REMOVE_RED : HIDDEN,
+				"Remove from the watchlist", () -> actions.removeWatchedItem(item.getItemId()));
 
-		star.addActionListener(e -> actions.setFavorite(item.getItemId(), !starred));
+		remove.setFont(FontManager.getRunescapeSmallFont());
 
-		final JButton overlay = overlayToggle(item);
+		panel.add(star);
+		panel.add(overlay);
+		panel.add(remove);
 
-		final JButton category = smallButton("…", ColorScheme.LIGHT_GRAY_COLOR, "Set category");
-
-		category.addActionListener(e -> showCategoryMenu(category, item));
-
-		final JButton remove = smallButton("×", REMOVE_RED, "Remove from watchlist");
-
-		remove.addActionListener(e -> actions.removeWatchedItem(item.getItemId()));
-
-		buttons.add(star);
-		buttons.add(overlay);
-		buttons.add(category);
-		buttons.add(remove);
-
-		return buttons;
+		return new RowButtons(panel, star, overlay, remove);
 	}
 
 	/**
-	 * Builds a row's on-screen overlay toggle.
-	 *
-	 * <p>State is carried by colour rather than by swapping the glyph, since the panel
-	 * font renders anything outside its range as tofu and only a small set is proven.
-	 *
-	 * @param item the row's item
-	 * @return the toggle, disabled once the overlay is full, with the reason in the
-	 *         tooltip — the plugin would ignore the click anyway, and a button that
-	 *         silently does nothing is worse than one that says why
+	 * @return the row's favourite toggle: a gold filled star when favourited, a grey outline
+	 *         when not, and nothing at all until the row is hovered
 	 */
-	private JButton overlayToggle(WatchedItem item)
+	private JLabel buildFavoriteStar(WatchedItem item, boolean hovered)
+	{
+		final boolean starred = item.isFavorite();
+		final Color resting = starred ? STAR_GOLD : ColorScheme.MEDIUM_GRAY_COLOR;
+
+		final JLabel star = iconButton(starred ? "★" : "☆", hovered ? resting : HIDDEN,
+				starred ? "Remove from favourites" : "Add to favourites",
+				() -> actions.setFavorite(item.getItemId(), !starred));
+
+		star.setFont(FontManager.getRunescapeSmallFont());
+		star.putClientProperty(BUTTON_RESTING_COLOR, resting);
+
+		return star;
+	}
+
+	/**
+	 * Builds a row's on-screen overlay toggle, painted as a small monitor to match Stockpile.
+	 *
+	 * @return the toggle, inert once the overlay is full with the reason in its tooltip — the
+	 *         plugin would ignore the click anyway, and a button that silently does nothing is
+	 *         worse than one that says why
+	 */
+	private JLabel buildOverlayToggle(WatchedItem item, boolean hovered)
 	{
 		final boolean on = item.isOnOverlay();
 		final boolean full = !on && overlayCount() >= PricewatchPlugin.OVERLAY_MAX;
+		final Color resting = full
+				? ColorScheme.DARK_GRAY_COLOR
+				: (on ? OVERLAY_ON : ColorScheme.MEDIUM_GRAY_COLOR);
 
-		final JButton toggle = smallButton("•",
-				on ? OVERLAY_ON : ColorScheme.MEDIUM_GRAY_COLOR,
-				overlayTooltip(on, full));
+		final JLabel toggle = iconButton(null, hovered ? resting : HIDDEN,
+				overlayTooltip(on, full),
+				full ? null : () -> actions.setOnOverlay(item.getItemId(), !on));
 
-		toggle.setEnabled(!full);
-		toggle.addActionListener(e -> actions.setOnOverlay(item.getItemId(), !on));
+		toggle.putClientProperty(BUTTON_RESTING_COLOR, resting);
+		toggle.putClientProperty(BUTTON_IS_ICON, true);
+		toggle.setIcon(overlayIcon(hovered ? resting : HIDDEN));
 
 		return toggle;
+	}
+
+	/**
+	 * @param text   the glyph to draw, or {@code null} for a button that carries a painted icon
+	 * @param colour the colour to start in, which is {@link #HIDDEN} for a row that is not hovered
+	 * @param onClick the action, or {@code null} for an inert button
+	 * @return a borderless label styled as a small clickable button
+	 */
+	private static JLabel iconButton(String text, Color colour, String tooltip, Runnable onClick)
+	{
+		final JLabel button = new JLabel(text == null ? "" : text, SwingConstants.CENTER);
+
+		button.setPreferredSize(new Dimension(BUTTON_SIZE, BUTTON_SIZE));
+		button.setForeground(colour);
+		button.setToolTipText(tooltip);
+
+		if (onClick == null)
+			return button;
+
+		button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		button.addMouseListener(new MouseAdapter()
+		{
+			@Override
+			public void mouseClicked(MouseEvent e)
+			{
+				onClick.run();
+			}
+		});
+
+		return button;
+	}
+
+	/** Paints a small monochrome monitor, the on-screen overlay's icon, in the given colour. */
+	private static Icon overlayIcon(Color color)
+	{
+		final int size = 16;
+		final BufferedImage img = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
+		final Graphics2D g = img.createGraphics();
+
+		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+		g.setColor(color);
+		g.drawRect(2, 2, size - 5, size - 8);
+		g.fillRect(size / 2 - 2, size - 5, 4, 2);
+		g.fillRect(size / 2 - 4, size - 3, 8, 1);
+		g.dispose();
+
+		return new ImageIcon(img);
+	}
+
+	/**
+	 * Wires a row's shared hover behaviour: entering reveals the quick buttons and records the
+	 * row as hovered, leaving hides them again, and a click anywhere that is not one of those
+	 * buttons opens the item's detail view.
+	 *
+	 * <p>The listener is added to every descendant, not just the card. Child labels that carry
+	 * a tooltip register with {@code ToolTipManager} and so consume mouse events, which is why
+	 * a listener on the card alone never saw the click.
+	 */
+	private void installRowHover(JPanel card, WatchedItem item, RowButtons buttons)
+	{
+		card.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+
+		final MouseAdapter hover = new MouseAdapter()
+		{
+			@Override
+			public void mouseClicked(MouseEvent e)
+			{
+				if (e.getSource() == buttons.star || e.getSource() == buttons.overlay
+						|| e.getSource() == buttons.remove)
+					return;
+
+				openDetail(item.getItemId());
+			}
+
+			@Override
+			public void mouseEntered(MouseEvent e)
+			{
+				hoveredItemId = item.getItemId();
+				showRowButtons(buttons, true);
+			}
+
+			@Override
+			public void mouseExited(MouseEvent e)
+			{
+				final Point p = SwingUtilities.convertPoint((Component) e.getSource(), e.getPoint(), card);
+
+				if (card.contains(p))
+					return;
+
+				if (hoveredItemId == item.getItemId())
+					hoveredItemId = -1;
+
+				showRowButtons(buttons, false);
+			}
+		};
+
+		addListenerRecursively(card, hover);
+	}
+
+	/** Reveals or hides a row's quick buttons by swapping each between its resting colour and transparent. */
+	private static void showRowButtons(RowButtons buttons, boolean show)
+	{
+		Stream.of(buttons.star, buttons.overlay, buttons.remove)
+				.filter(Objects::nonNull)
+				.forEach(button -> paintRowButton(button, show));
+	}
+
+	/** Applies one quick button's revealed or hidden colour, to its icon when it carries one. */
+	private static void paintRowButton(JLabel button, boolean show)
+	{
+		final Object resting = button.getClientProperty(BUTTON_RESTING_COLOR);
+		final Color colour = show && resting instanceof Color ? (Color) resting : HIDDEN;
+
+		button.setForeground(colour);
+
+		if (Boolean.TRUE.equals(button.getClientProperty(BUTTON_IS_ICON)))
+			button.setIcon(overlayIcon(colour));
+	}
+
+	/** Adds a listener to a component and every descendant beneath it. */
+	private static void addListenerRecursively(Component component, MouseAdapter listener)
+	{
+		component.addMouseListener(listener);
+
+		if (!(component instanceof Container))
+			return;
+
+		for (Component child : ((Container) component).getComponents())
+			addListenerRecursively(child, listener);
 	}
 
 	/** @return the overlay toggle's tooltip for its current state. */
@@ -2071,51 +2439,6 @@ public class PricewatchPanel extends PluginPanel
 	}
 
 	/**
-	 * Builds the price line under an item's name.
-	 *
-	 * <p>Returns {@code null} when the line is switched off entirely, either by
-	 * setting the window to {@link TimeWindow#NONE} or by turning off every column
-	 * — both leave a plain icon and name row.
-	 *
-	 * @param item    the item to describe
-	 * @param options what the line should show
-	 * @return the HTML line, a short explanation when there is no price to show, or
-	 *         {@code null} to omit the line
-	 */
-	static String priceText(WatchedItem item, PriceLineOptions options)
-	{
-		if (options.window == TimeWindow.NONE || !options.anyColumn())
-			return null;
-
-		if (!item.isTradeable())
-			return "Not tradeable";
-
-		if (item.isPriceLoadFailed())
-			return "No price data";
-
-		if (!item.hasPrices())
-			return "Loading...";
-
-		final PriceStats stats = statsFor(item, options.window);
-		final boolean live = options.window == TimeWindow.LIVE;
-		final StringBuilder html = new StringBuilder("<html>");
-
-		if (options.high)
-			html.append(cell("H", stats.getHigh(), live ? item.getHighDelta() : 0, options));
-
-		if (options.low)
-			html.append(cell("L", stats.getLow(), live ? item.getLowDelta() : 0, options));
-
-		if (options.avg)
-			html.append(cell("A", stats.getAvg(), live ? item.getAvgDelta() : 0, options));
-
-		if (options.volume)
-			html.append(volumeCell(stats.getVolume()));
-
-		return html.append("</html>").toString();
-	}
-
-	/**
 	 * @return the item's stats for a window, falling back to its current prices when
 	 *         the series behind that window has not been fetched yet
 	 */
@@ -2126,38 +2449,6 @@ public class PricewatchPanel extends PluginPanel
 			return stats;
 
 		return new PriceStats(item.getHighPrice(), item.getLowPrice(), item.getAvgPrice(), 0);
-	}
-
-	/** @return one labelled figure, tinted by its movement when the indicator allows. */
-	private static String cell(String label, long value, int delta, PriceLineOptions options)
-	{
-		final String text = GpFormat.shortValue(value);
-		final String colour = options.colourFor(delta);
-
-		if (colour == null)
-			return label + " " + text + "&nbsp;&nbsp;";
-
-		return label + " <font color='" + colour + "'>" + text + "</font>&nbsp;&nbsp;";
-	}
-
-	/** @return the traded-volume figure, or a dash for a window that carries no volume. */
-	private static String volumeCell(long volume)
-	{
-		return "V " + (volume > 0 ? GpFormat.shortValue(volume) : "&mdash;") + "&nbsp;&nbsp;";
-	}
-
-	/** @return the untruncated figures for the row tooltip. */
-	private static String priceTooltip(WatchedItem item, PriceLineOptions options)
-	{
-		if (!item.hasPrices() || !item.isTradeable())
-			return item.getName();
-
-		final PriceStats stats = statsFor(item, options.window);
-
-		return item.getName() + " — " + options.window.getLongLabel()
-				+ ": high " + GpFormat.fullGp(stats.getHigh())
-				+ ", low " + GpFormat.fullGp(stats.getLow())
-				+ ", avg " + GpFormat.fullGp(stats.getAvg());
 	}
 
 	/**
@@ -2232,15 +2523,18 @@ public class PricewatchPanel extends PluginPanel
 
 			return indicator == PriceIndicatorMode.ALL ? FLAT_HEX : null;
 		}
-	}
 
-	/** @return dimmed text for prices restored from cache, normal text for live ones. */
-	private static Color priceColor(WatchedItem item)
-	{
-		if (!item.hasPrices() || !item.isTradeable())
-			return ColorScheme.MEDIUM_GRAY_COLOR;
+		/**
+		 * @param delta   the sign of the movement, or 0 when unchanged
+		 * @param resting the colour the figure carries when it has not moved
+		 * @return the movement tint when one applies, else the figure's resting colour
+		 */
+		Color movementColour(int delta, Color resting)
+		{
+			final String hex = colourFor(delta);
 
-		return item.hasLivePrices() ? ColorScheme.GRAND_EXCHANGE_PRICE : ColorScheme.MEDIUM_GRAY_COLOR;
+			return hex == null ? resting : Color.decode(hex);
+		}
 	}
 
 	/** Where one rendered row sits, so a drop point can be resolved back to an item. */
