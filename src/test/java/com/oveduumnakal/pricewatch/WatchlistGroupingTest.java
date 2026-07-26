@@ -74,7 +74,7 @@ public class WatchlistGroupingTest
 				item("Yew logs", "Logs"), item("Shark", null),
 				favourite("Abyssal whip", null), item("Nature rune", "Runes"));
 
-		assertEquals(Arrays.asList("Favourites", "Runes", "Logs", "Uncategorised"),
+		assertEquals(Arrays.asList("Favorites", "Runes", "Logs", "Uncategorized"),
 				labels(group(items, categories)));
 	}
 
@@ -96,8 +96,8 @@ public class WatchlistGroupingTest
 
 		List<WatchlistGrouping.Group> groups = group(items, categories);
 
-		assertEquals(Collections.singletonList("Favourites"), labels(groups));
-		assertEquals(Collections.singletonList("Nature rune"), itemsIn(groups, "Favourites"));
+		assertEquals(Collections.singletonList("Favorites"), labels(groups));
+		assertEquals(Collections.singletonList("Nature rune"), itemsIn(groups, "Favorites"));
 	}
 
 	@Test
@@ -117,8 +117,8 @@ public class WatchlistGroupingTest
 
 		List<WatchlistGrouping.Group> groups = group(items, Collections.emptyList());
 
-		assertEquals(Collections.singletonList("Uncategorised"), labels(groups));
-		assertEquals(Collections.singletonList("Nature rune"), itemsIn(groups, "Uncategorised"));
+		assertEquals(Collections.singletonList("Uncategorized"), labels(groups));
+		assertEquals(Collections.singletonList("Nature rune"), itemsIn(groups, "Uncategorized"));
 	}
 
 	@Test
@@ -126,7 +126,7 @@ public class WatchlistGroupingTest
 	{
 		List<WatchedItem> items = Arrays.asList(item("A", "   "), item("B", null));
 
-		assertEquals(Collections.singletonList("Uncategorised"),
+		assertEquals(Collections.singletonList("Uncategorized"),
 				labels(group(items, Collections.emptyList())));
 	}
 
@@ -143,7 +143,7 @@ public class WatchlistGroupingTest
 				.filter(g -> g.getLabel().equals("Runes"))
 				.allMatch(WatchlistGrouping.Group::isCollapsed));
 		assertTrue(groups.stream()
-				.filter(g -> g.getLabel().equals("Favourites"))
+				.filter(g -> g.getLabel().equals("Favorites"))
 				.allMatch(WatchlistGrouping.Group::isCollapsed));
 	}
 
@@ -167,7 +167,7 @@ public class WatchlistGroupingTest
 		List<WatchlistGrouping.Group> groups = WatchlistGrouping.group(
 				items, categories, false, false, SortMode.MANUAL, false, "shark");
 
-		assertEquals(Collections.singletonList("Uncategorised"), labels(groups));
+		assertEquals(Collections.singletonList("Uncategorized"), labels(groups));
 	}
 
 	@Test
@@ -181,7 +181,7 @@ public class WatchlistGroupingTest
 		List<WatchlistGrouping.Group> groups = WatchlistGrouping.group(
 				items, categories, false, false, SortMode.NAME, false, "");
 
-		assertEquals(Arrays.asList("Alpha fav", "Zed fav"), itemsIn(groups, "Favourites"));
+		assertEquals(Arrays.asList("Alpha fav", "Zed fav"), itemsIn(groups, "Favorites"));
 		assertEquals(Arrays.asList("Alpha rune", "Zed rune"), itemsIn(groups, "Runes"));
 	}
 
