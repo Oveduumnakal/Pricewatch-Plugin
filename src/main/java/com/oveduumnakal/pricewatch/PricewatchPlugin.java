@@ -200,6 +200,12 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 
 	private boolean uncategorizedCollapsed;
 
+	/** Nature rune price, cached on the client thread so {@link #refreshPanel()} needs no client thread. */
+	private volatile long cachedNaturePrice;
+
+	/** Fire rune price, cached on the client thread so {@link #refreshPanel()} needs no client thread. */
+	private volatile long cachedFirePrice;
+
 	private Map<Integer, WikiRealtimePriceClient.ItemMapping> itemMappings = new HashMap<>();
 
 	private boolean mappingsLoaded;
@@ -318,6 +324,7 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 			overlayManager.add(overlay);
 		}
 
+		clientThread.invokeLater(this::cacheRunePrices);
 		executor.execute(this::fetchItemMappings);
 		scheduleRefresh();
 	}
@@ -883,6 +890,8 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 				item.setPriceLoadFailed(true);
 		}
 
+		cacheRunePrices();
+
 		if (all.isEmpty())
 		{
 			refreshPanel();
@@ -940,8 +949,8 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 	 */
 	private boolean fireDueAlerts(WatchedItem item, Notification style)
 	{
-		final long naturePrice = runePrice(NATURE_RUNE_ID);
-		final long firePrice = runePrice(FIRE_RUNE_ID);
+		final long naturePrice = cachedNaturePrice;
+		final long firePrice = cachedFirePrice;
 
 		boolean removed = false;
 		Iterator<NotificationRule> rules = item.getNotifications().iterator();
@@ -1807,6 +1816,21 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 		return Math.max(0, itemManager.getItemPrice(itemId));
 	}
 
+	/**
+	 * Re-reads both alchemy rune prices into their caches.
+	 *
+	 * <p>Must run on the client thread: {@link #runePrice(int)} falls back to
+	 * {@link net.runelite.client.game.ItemManager#getItemPrice(int)}, which asserts the client
+	 * thread. Caching the two figures here is what lets {@link #refreshPanel()} be called from
+	 * anywhere — including Swing listeners and the synchronous {@code ConfigChanged} dispatch —
+	 * rather than only from the client thread.
+	 */
+	private void cacheRunePrices()
+	{
+		cachedNaturePrice = runePrice(NATURE_RUNE_ID);
+		cachedFirePrice = runePrice(FIRE_RUNE_ID);
+	}
+
 	/** Writes the watchlist to the RS profile config. */
 	private void persistWatchedItems()
 	{
@@ -2014,7 +2038,7 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 				viewState.getSortMode(), viewState.isSortReversed(), viewState.isCompact(),
 				new ArrayList<>(categories), favoritesCollapsed, uncategorizedCollapsed,
 				DetailSections.ordered(sectionSlots()),
-				runePrice(NATURE_RUNE_ID), runePrice(FIRE_RUNE_ID));
+				cachedNaturePrice, cachedFirePrice);
 
 		SwingUtilities.invokeLater(() -> panel.rebuild(snapshot, preview, view));
 	}
