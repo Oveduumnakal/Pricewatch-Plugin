@@ -161,28 +161,11 @@ public class PricewatchScreenOverlay extends Overlay
 			return lines;
 		}
 
-		if (config.screenOverlayLayout() == OverlayLayout.COMPACT)
-		{
-			lines.add(compactLine(item));
-			return lines;
-		}
-
 		final TimeWindow window = config.priceLine();
 		if (window != TimeWindow.NONE)
 			lines.add(windowLine(item, window));
 
 		return lines;
-	}
-
-	/**
-	 * @return the compact layout's single line: the live high and low with no window
-	 *         label, since a one-line box has no room to say which window it means
-	 */
-	private static List<Seg> compactLine(WatchedItem item)
-	{
-		return Arrays.asList(
-				new Seg(GpFormat.shortValue(item.getHighPrice()), PricewatchColors.HIGH),
-				new Seg(GpFormat.shortValue(item.getLowPrice()), PricewatchColors.LOW));
 	}
 
 	/** @return one price line for a window, honouring the configured visible columns. */
@@ -207,8 +190,12 @@ public class PricewatchScreenOverlay extends Overlay
 		if (config.showColAvg())
 			line.add(new Seg(GpFormat.shortValue(avg), PricewatchColors.AVG));
 
-		if (config.showColVolume() && !live)
-			line.add(new Seg(GpFormat.shortValue(stats.getVolume()), VOLUME_COLOR));
+		if (config.showColVolume())
+		{
+			final long volume = PricewatchPanel.volumeFor(item, window);
+
+			line.add(new Seg(volume > 0 ? GpFormat.shortValue(volume) : "-", VOLUME_COLOR));
+		}
 
 		return line;
 	}
