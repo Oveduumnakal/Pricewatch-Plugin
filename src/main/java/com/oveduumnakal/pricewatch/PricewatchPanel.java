@@ -2310,7 +2310,7 @@ public class PricewatchPanel extends PluginPanel
 		final Color resting = starred ? STAR_GOLD : ColorScheme.MEDIUM_GRAY_COLOR;
 
 		final JLabel star = iconButton(starred ? "★" : "☆", hovered ? resting : HIDDEN,
-				starred ? "Remove from favourites" : "Add to favourites",
+				starred ? "Remove from favorites" : "Add to favorites",
 				() -> actions.setFavorite(item.getItemId(), !starred));
 
 		star.setFont(FontManager.getRunescapeSmallFont());
@@ -2525,7 +2525,7 @@ public class PricewatchPanel extends PluginPanel
 	private void showCategoryMenu(Component anchor, WatchedItem item)
 	{
 		final JPopupMenu menu = new JPopupMenu();
-		final JMenuItem clear = new JMenuItem("Uncategorised");
+		final JMenuItem clear = new JMenuItem("Uncategorized");
 
 		clear.addActionListener(e -> actions.setItemCategory(item.getItemId(), null));
 		menu.add(clear);

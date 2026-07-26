@@ -190,7 +190,7 @@ public interface PricewatchConfig extends Config
 	)
 	default boolean showColAvg()
 	{
-		return false;
+		return true;
 	}
 
 	@ConfigItem(
@@ -209,7 +209,7 @@ public interface PricewatchConfig extends Config
 	@ConfigItem(
 			keyName = KEY_PRICE_CHANGE_INDICATOR,
 			name = "Price Change Indicator",
-			description = "Colour prices green or red as they move. Only the Latest window tracks "
+			description = "Color prices green or red as they move. Only the Latest window tracks "
 					+ "movement between refreshes.",
 			section = watchedItemSection,
 			position = 5
@@ -443,20 +443,20 @@ public interface PricewatchConfig extends Config
 
 	@ConfigItem(
 			keyName = KEY_WATCH_ITEM_COLOR,
-			name = "\"Watch item\" Colour",
-			description = "Colour of the \"Watch item\" context menu entry",
+			name = "\"Watch item\" Color",
+			description = "Color of the \"Watch item\" context menu entry",
 			section = contextMenuSection,
 			position = 1
 	)
 	default Color watchItemColor()
 	{
-		return new Color(0xd4, 0xe6, 0xfb);
+		return new Color(0xd8, 0xfb, 0xd4);
 	}
 
 	@ConfigItem(
 			keyName = KEY_UNWATCH_ITEM_COLOR,
-			name = "\"Unwatch item\" Colour",
-			description = "Colour of the \"Unwatch item\" context menu entry",
+			name = "\"Unwatch item\" Color",
+			description = "Color of the \"Unwatch item\" context menu entry",
 			section = contextMenuSection,
 			position = 2
 	)

@@ -64,7 +64,7 @@ final class WatchlistGrouping
 		final List<WatchedItem> matched = WatchlistOrder.filterAndSort(items, mode, reversed, filter);
 		final List<Group> groups = new ArrayList<>();
 
-		addGroup(groups, CategoryState.FAVORITES_KEY, "Favourites", favoritesCollapsed,
+		addGroup(groups, CategoryState.FAVORITES_KEY, "Favorites", favoritesCollapsed,
 				matched.stream()
 						.filter(WatchedItem::isFavorite)
 						.collect(Collectors.toList()));
@@ -78,7 +78,7 @@ final class WatchlistGrouping
 							.collect(Collectors.toList()));
 		}
 
-		addGroup(groups, CategoryState.UNCATEGORIZED_KEY, "Uncategorised", uncategorizedCollapsed,
+		addGroup(groups, CategoryState.UNCATEGORIZED_KEY, "Uncategorized", uncategorizedCollapsed,
 				matched.stream()
 						.filter(item -> !item.isFavorite())
 						.filter(item -> !inAnyCategory(item, categories))
