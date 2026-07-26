@@ -28,6 +28,9 @@ interface WatchlistActions
 	 */
 	void removeWatchedItem(int itemId);
 
+	/** Removes every item from the watchlist, along with the alerts attached to them. */
+	void clearWatchlist();
+
 	/**
 	 * Stars or unstars an item.
 	 *

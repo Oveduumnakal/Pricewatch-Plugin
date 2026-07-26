@@ -26,6 +26,8 @@ import java.awt.event.MouseEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.awt.image.BufferedImage;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.text.NumberFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -34,6 +36,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.BooleanSupplier;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import javax.swing.BorderFactory;
@@ -63,8 +67,10 @@ import javax.swing.ListSelectionModel;
 import javax.swing.ScrollPaneConstants;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
+import javax.swing.Timer;
 import javax.swing.WindowConstants;
 import javax.swing.border.EmptyBorder;
+import javax.swing.border.MatteBorder;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.HyperlinkEvent;
 import javax.swing.event.DocumentListener;
@@ -178,11 +184,35 @@ public class PricewatchPanel extends PluginPanel
 
 	private final JLabel empty = new JLabel("Search to add an item", SwingConstants.CENTER);
 
-	private final JButton sortButton = new JButton();
+	private final JLabel sortToggle = new JLabel("", SwingConstants.CENTER);
 
-	private final JButton compactButton = new JButton();
+	private final JLabel filterToggle = new JLabel();
+
+	private final JLabel compactToggle = new JLabel("≣", SwingConstants.CENTER);
+
+	private final JLabel categoriesButton = new JLabel();
+
+	private final JLabel reorderToggle = new JLabel("⚙", SwingConstants.CENTER);
+
+	/** Footer countdown to the next price refresh. */
+	private final JLabel lastRefreshLabel = new JLabel("Prices not yet loaded", SwingConstants.CENTER);
+
+	private final JButton clearButton = new JButton("Clear");
 
 	private final JButton shareButton = new JButton();
+
+	/**
+	 * Whether the reorganize mode is active, revealing each row's drag handle and category
+	 * picker. Off by default, so an ordinary watchlist is not cluttered with controls that
+	 * only matter while rearranging it.
+	 */
+	private boolean reorderMode;
+
+	/** When prices were last applied, driving the footer countdown. */
+	private volatile Instant lastPriceRefresh;
+
+	/** Ticks the footer countdown once a second, independently of price arrivals. */
+	private final Timer refreshCountdown = new Timer(1000, e -> updateRefreshLabel());
 
 	private final List<Integer> watchedIds = new ArrayList<>();
 
@@ -256,6 +286,9 @@ public class PricewatchPanel extends PluginPanel
 
 		add(buildHeader(), BorderLayout.NORTH);
 		add(buildScrollingList(), BorderLayout.CENTER);
+		add(buildFooter(), BorderLayout.SOUTH);
+
+		refreshCountdown.start();
 	}
 
 	/** @return the title row, search field with its results dropdown, and the filter/sort/compact controls. */
@@ -272,7 +305,13 @@ public class PricewatchPanel extends PluginPanel
 		return header;
 	}
 
-	/** @return the plugin name with the changelog badge beside it. */
+	/**
+	 * @return the plugin name with the changelog badge beside it
+	 *
+	 *         <p>The badge sits east, which shrinks the centre region and would leave the
+	 *         title centred in what is left rather than in the row. A strut of the badge's
+	 *         own width balances the west side so the title sits on the row's true centre.
+	 */
 	private JPanel buildTitleRow()
 	{
 		final JLabel title = new JLabel("Pricewatch", SwingConstants.CENTER);
@@ -285,15 +324,24 @@ public class PricewatchPanel extends PluginPanel
 		applyChangelogButtonStyle();
 
 		final JPanel row = new JPanel(new BorderLayout());
+		final Component balance = Box.createHorizontalStrut(
+				changelogButton.getPreferredSize().width);
 
 		row.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		row.add(balance, BorderLayout.WEST);
 		row.add(title, BorderLayout.CENTER);
 		row.add(changelogButton, BorderLayout.EAST);
 
 		return row;
 	}
 
-	/** @return the filter box with the sort and compact buttons beside it. */
+	/**
+	 * @return the header's toggle row over the filter box
+	 *
+	 *         <p>Sort, filter, compact, categories and reorganize are icon toggles rather
+	 *         than labelled buttons, matching Stockpile: at panel width there is no room for
+	 *         five captions, and each toggle carries its state in colour instead.
+	 */
 	private JPanel buildControls()
 	{
 		filterField.setIcon(IconTextField.Icon.SEARCH);
@@ -301,47 +349,303 @@ public class PricewatchPanel extends PluginPanel
 		filterField.setHoverBackgroundColor(ColorScheme.DARK_GRAY_HOVER_COLOR);
 		filterField.setMinimumSize(new Dimension(0, 24));
 		filterField.setPreferredSize(new Dimension(0, 24));
+		filterField.setVisible(false);
 		filterField.addClearListener(this::redraw);
 		filterField.getDocument().addDocumentListener(new FilterListener());
 
-		styleControlButton(sortButton, "Sort the watchlist");
-		sortButton.addActionListener(e -> showSortMenu());
+		styleToggle(sortToggle, "Sort the watchlist", this::showSortMenu);
+		styleToggle(filterToggle, "Filter the watchlist", this::toggleFilterField);
+		styleToggle(compactToggle, "Toggle compact rows", actions::toggleCompactView);
+		styleToggle(categoriesButton, "Manage categories", this::openManageCategoriesDialog);
+		styleToggle(reorderToggle, "Rearrange the watchlist", this::toggleReorderMode);
 
-		styleControlButton(compactButton, "Toggle compact rows");
-		compactButton.addActionListener(e -> actions.toggleCompactView());
+		installToggleHover(sortToggle, () -> lastView.getSortMode() != SortMode.MANUAL,
+				sortToggle::setForeground, this::updateSortToggle);
+		installToggleHover(filterToggle, filterField::isVisible,
+				colour -> filterToggle.setIcon(filterIcon(colour)), this::updateFilterToggle);
+		installToggleHover(compactToggle, () -> lastView.isCompact(),
+				compactToggle::setForeground, this::updateCompactToggle);
+		installToggleHover(categoriesButton, () -> false,
+				colour -> categoriesButton.setIcon(categoriesIcon(colour)),
+				() -> categoriesButton.setIcon(categoriesIcon(ColorScheme.LIGHT_GRAY_COLOR)));
+		installToggleHover(reorderToggle, () -> reorderMode,
+				reorderToggle::setForeground, this::updateReorderToggle);
 
-		styleControlButton(shareButton, "Export or import a share code");
-		shareButton.setText("Share");
-		shareButton.addActionListener(e -> showShareMenu());
+		updateSortToggle();
+		updateFilterToggle();
+		updateCompactToggle();
+		updateReorderToggle();
+		categoriesButton.setIcon(categoriesIcon(ColorScheme.LIGHT_GRAY_COLOR));
 
-		final JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
+		final JPanel toggles = new JPanel();
 
-		buttons.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		buttons.add(sortButton);
-		buttons.add(compactButton);
-		buttons.add(shareButton);
+		toggles.setLayout(new BoxLayout(toggles, BoxLayout.X_AXIS));
+		toggles.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		toggles.add(sortToggle);
+		toggles.add(filterToggle);
+		toggles.add(compactToggle);
+		toggles.add(categoriesButton);
+		toggles.add(reorderToggle);
 
-		final JPanel controls = new JPanel(new BorderLayout(4, 0));
+		final JPanel togglesRow = new JPanel(new BorderLayout());
+
+		togglesRow.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		togglesRow.add(toggles, BorderLayout.EAST);
+
+		final JPanel controls = new JPanel(new BorderLayout(0, 4));
 
 		controls.setBackground(ColorScheme.DARK_GRAY_COLOR);
 		controls.setBorder(new EmptyBorder(6, 0, 0, 0));
+		controls.add(togglesRow, BorderLayout.NORTH);
 		controls.add(filterField, BorderLayout.CENTER);
-		controls.add(buttons, BorderLayout.EAST);
 
 		return controls;
 	}
 
-	/** Applies the shared look to one of the small header buttons. */
-	private static void styleControlButton(JButton button, String tooltip)
+	/** Applies the shared look and click action to one of the header's icon toggles. */
+	private static void styleToggle(JLabel toggle, String tooltip, Runnable onClick)
 	{
-		button.setPreferredSize(new Dimension(60, 24));
-		button.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		button.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		button.setFont(FontManager.getRunescapeSmallFont());
-		button.setFocusPainted(false);
-		button.setBorder(BorderFactory.createLineBorder(ColorScheme.MEDIUM_GRAY_COLOR));
-		button.setToolTipText(tooltip);
-		button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		toggle.setFont(FontManager.getRunescapeSmallFont());
+		toggle.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		toggle.setBorder(new EmptyBorder(2, 5, 2, 5));
+		toggle.setToolTipText(tooltip);
+		toggle.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		toggle.addMouseListener(new MouseAdapter()
+		{
+			@Override
+			public void mouseClicked(MouseEvent e)
+			{
+				onClick.run();
+			}
+		});
+	}
+
+	/**
+	 * Installs grey↔gold hover colouring on a header toggle: an inactive toggle previews
+	 * gold, an active one previews grey, and its resting colour is repainted on exit.
+	 *
+	 * @param active whether the toggle is currently in its gold state
+	 * @param paint  applies a colour, which is the foreground for a glyph and the icon for a
+	 *               painted toggle
+	 * @param rest   repaints the toggle's resting colour
+	 */
+	private static void installToggleHover(JLabel toggle, BooleanSupplier active,
+			Consumer<Color> paint, Runnable rest)
+	{
+		toggle.addMouseListener(new MouseAdapter()
+		{
+			@Override
+			public void mouseEntered(MouseEvent e)
+			{
+				paint.accept(active.getAsBoolean() ? ColorScheme.LIGHT_GRAY_COLOR : PricewatchColors.AVG);
+			}
+
+			@Override
+			public void mouseExited(MouseEvent e)
+			{
+				rest.run();
+			}
+		});
+	}
+
+	/** Shows or hides the filter box, clearing any active filter as it closes. */
+	private void toggleFilterField()
+	{
+		final boolean show = !filterField.isVisible();
+
+		filterField.setVisible(show);
+
+		if (!show && !filterField.getText().isEmpty())
+			filterField.setText("");
+
+		updateFilterToggle();
+		filterField.revalidate();
+		filterField.repaint();
+
+		if (show)
+			filterField.requestFocusInWindow();
+	}
+
+	/** Turns the reorganize mode on or off, revealing or hiding each row's drag handle. */
+	private void toggleReorderMode()
+	{
+		reorderMode = !reorderMode;
+		updateReorderToggle();
+		redraw();
+	}
+
+	/** Marks the sort toggle with the active direction, gold once sorting is not manual. */
+	private void updateSortToggle()
+	{
+		final SortMode mode = lastView.getSortMode();
+
+		if (mode == SortMode.MANUAL)
+		{
+			sortToggle.setText("⇅");
+			sortToggle.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+
+			return;
+		}
+
+		sortToggle.setText(mode.descending(lastView.isSortReversed()) ? "↓" : "↑");
+		sortToggle.setForeground(PricewatchColors.AVG);
+	}
+
+	/** Tints the filter funnel gold while the filter box is open. */
+	private void updateFilterToggle()
+	{
+		filterToggle.setIcon(filterIcon(filterField.isVisible()
+				? PricewatchColors.AVG : ColorScheme.LIGHT_GRAY_COLOR));
+	}
+
+	/** Tints the compact toggle gold while compact rows are active. */
+	private void updateCompactToggle()
+	{
+		compactToggle.setForeground(lastView.isCompact()
+				? PricewatchColors.AVG : ColorScheme.LIGHT_GRAY_COLOR);
+	}
+
+	/** Tints the reorganize toggle gold while active, and reveals the categories button with it. */
+	private void updateReorderToggle()
+	{
+		reorderToggle.setForeground(reorderMode
+				? PricewatchColors.AVG : ColorScheme.LIGHT_GRAY_COLOR);
+		categoriesButton.setVisible(reorderMode);
+	}
+
+	/** Paints a small monochrome funnel: a wide top bar tapering to a narrow stem. */
+	private static Icon filterIcon(Color color)
+	{
+		final int size = 14;
+		final BufferedImage img = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
+		final Graphics2D g = img.createGraphics();
+
+		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+		g.setColor(color);
+		g.fillPolygon(
+				new int[]{1, size - 1, size / 2 + 1, size / 2 + 1, size / 2 - 1, size / 2 - 1},
+				new int[]{2, 2, size / 2, size - 1, size - 1, size / 2},
+				6);
+		g.dispose();
+
+		return new ImageIcon(img);
+	}
+
+	/** Paints a bulleted-list glyph: three dots, each followed by a line. */
+	private static Icon categoriesIcon(Color color)
+	{
+		final int size = 14;
+		final BufferedImage img = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
+		final Graphics2D g = img.createGraphics();
+
+		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+		g.setColor(color);
+
+		for (int y : new int[]{1, 6, 11})
+		{
+			g.fillOval(1, y, 3, 3);
+			g.fillRect(6, y, 7, 3);
+		}
+
+		g.dispose();
+
+		return new ImageIcon(img);
+	}
+
+	/**
+	 * @return the footer: the countdown to the next price refresh with the Clear action
+	 *         beside it, over the share menu
+	 */
+	private JPanel buildFooter()
+	{
+		lastRefreshLabel.setForeground(PricewatchColors.MUTED);
+		lastRefreshLabel.setFont(FontManager.getRunescapeSmallFont());
+
+		clearButton.setFont(FontManager.getRunescapeSmallFont());
+		clearButton.setForeground(PricewatchColors.LOW);
+		clearButton.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		clearButton.setFocusPainted(false);
+		clearButton.setToolTipText("Remove every item from the watchlist, including its alerts");
+		clearButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		clearButton.addActionListener(e -> confirmAndClearAll());
+
+		final JPanel refreshRow = new JPanel(new BorderLayout());
+
+		refreshRow.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		refreshRow.add(lastRefreshLabel, BorderLayout.CENTER);
+		refreshRow.add(clearButton, BorderLayout.EAST);
+
+		shareButton.setText("Share");
+		shareButton.setFont(FontManager.getRunescapeSmallFont());
+		shareButton.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		shareButton.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		shareButton.setFocusPainted(false);
+		shareButton.setToolTipText("Export or import a watchlist share code");
+		shareButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		shareButton.addActionListener(e -> showShareMenu());
+
+		final JPanel shareRow = new JPanel(new GridLayout(1, 1));
+
+		shareRow.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		shareRow.setBorder(BorderFactory.createCompoundBorder(
+				new EmptyBorder(6, 0, 0, 0),
+				BorderFactory.createCompoundBorder(
+						new MatteBorder(1, 0, 0, 0, PricewatchColors.DIVIDER),
+						new EmptyBorder(6, 0, 0, 0))));
+		shareRow.add(shareButton);
+
+		final JPanel footer = new JPanel(new BorderLayout());
+
+		footer.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		footer.setBorder(BorderFactory.createCompoundBorder(
+				new MatteBorder(1, 0, 0, 0, PricewatchColors.DIVIDER),
+				new EmptyBorder(6, 0, 0, 0)));
+		footer.add(refreshRow, BorderLayout.CENTER);
+		footer.add(shareRow, BorderLayout.SOUTH);
+
+		return footer;
+	}
+
+	/** Updates the footer countdown from the last price refresh and the configured rate. */
+	private void updateRefreshLabel()
+	{
+		final Instant last = lastPriceRefresh;
+
+		if (last == null)
+		{
+			lastRefreshLabel.setText("Prices not yet loaded");
+
+			return;
+		}
+
+		final long rate = Math.max(30, config.priceRefreshSeconds());
+		final long secondsUntil = Math.max(0, rate - ChronoUnit.SECONDS.between(last, Instant.now()));
+
+		lastRefreshLabel.setText("Price refresh in " + secondsUntil + " seconds");
+	}
+
+	/**
+	 * Records when prices were last applied, so the footer can count down to the next refresh.
+	 *
+	 * @param refreshed the moment the latest prices landed
+	 */
+	public void setLastPriceRefresh(Instant refreshed)
+	{
+		this.lastPriceRefresh = refreshed;
+	}
+
+	/** Asks before emptying the watchlist, since the alerts on each item go with it. */
+	private void confirmAndClearAll()
+	{
+		if (lastItems.isEmpty())
+			return;
+
+		final int choice = JOptionPane.showConfirmDialog(this,
+				"Remove all " + lastItems.size() + " watched items, including their alerts?",
+				"Clear watchlist", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+
+		if (choice == JOptionPane.YES_OPTION)
+			actions.clearWatchlist();
 	}
 
 	/**
@@ -651,7 +955,7 @@ public class PricewatchPanel extends PluginPanel
 			menu.add(reverse);
 		}
 
-		menu.show(sortButton, 0, sortButton.getHeight());
+		menu.show(sortToggle, 0, sortToggle.getHeight());
 	}
 
 	/** @return the search field with its results dropdown beneath it. */
@@ -1547,8 +1851,9 @@ public class PricewatchPanel extends PluginPanel
 		rowRefs.clear();
 		lastItems.forEach(item -> watchedIds.add(item.getItemId()));
 
-		sortButton.setText(sortButtonText());
-		compactButton.setText(lastView.isCompact() ? "Full" : "Compact");
+		updateSortToggle();
+		updateCompactToggle();
+		clearButton.setEnabled(!lastItems.isEmpty());
 
 		final PriceLineOptions options = new PriceLineOptions(config);
 		final List<WatchlistGrouping.Group> groups = WatchlistGrouping.group(
@@ -1590,17 +1895,6 @@ public class PricewatchPanel extends PluginPanel
 
 		list.revalidate();
 		list.repaint();
-	}
-
-	/** @return the sort button's label: the mode, with an arrow when its direction is flipped. */
-	private String sortButtonText()
-	{
-		final SortMode mode = lastView.getSortMode();
-
-		if (mode == SortMode.MANUAL)
-			return mode.toString();
-
-		return mode + (mode.descending(lastView.isSortReversed()) ? " v" : " ^");
 	}
 
 	/** @return a clickable accordion header that rolls its group up or down. */
@@ -1883,7 +2177,7 @@ public class PricewatchPanel extends PluginPanel
 
 		leading.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 
-		if (!isPreview && lastView.getSortMode() == SortMode.MANUAL)
+		if (!isPreview && reorderMode && lastView.getSortMode() == SortMode.MANUAL)
 			leading.add(buildDragHandle(item), BorderLayout.WEST);
 
 		leading.add(buildRowIcon(item), BorderLayout.CENTER);
@@ -1985,6 +2279,9 @@ public class PricewatchPanel extends PluginPanel
 		panel.add(overlay);
 		panel.add(remove);
 
+		if (reorderMode)
+			panel.add(buildCategoryButton(item));
+
 		return new RowButtons(panel, star, overlay, remove);
 	}
 
@@ -2005,6 +2302,33 @@ public class PricewatchPanel extends PluginPanel
 		star.putClientProperty(BUTTON_RESTING_COLOR, resting);
 
 		return star;
+	}
+
+	/**
+	 * @return a row's category picker, offered only while the reorganize mode is on
+	 *
+	 *         <p>It stays visible rather than hover-revealed: reorganize mode exists to
+	 *         rearrange the list, so the controls that do the rearranging should not need
+	 *         to be hunted for one row at a time.
+	 */
+	private JLabel buildCategoryButton(WatchedItem item)
+	{
+		final JLabel category = new JLabel();
+
+		category.setPreferredSize(new Dimension(BUTTON_SIZE, BUTTON_SIZE));
+		category.setIcon(categoriesIcon(ColorScheme.LIGHT_GRAY_COLOR));
+		category.setToolTipText("Set this item's category");
+		category.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		category.addMouseListener(new MouseAdapter()
+		{
+			@Override
+			public void mouseClicked(MouseEvent e)
+			{
+				showCategoryMenu(category, item);
+			}
+		});
+
+		return category;
 	}
 
 	/**
@@ -2183,7 +2507,7 @@ public class PricewatchPanel extends PluginPanel
 	}
 
 	/** Opens the per-item category picker, with a way into the manage dialog. */
-	private void showCategoryMenu(JButton anchor, WatchedItem item)
+	private void showCategoryMenu(Component anchor, WatchedItem item)
 	{
 		final JPopupMenu menu = new JPopupMenu();
 		final JMenuItem clear = new JMenuItem("Uncategorised");

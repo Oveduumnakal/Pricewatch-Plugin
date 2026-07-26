@@ -891,6 +891,7 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 		}
 
 		cacheRunePrices();
+		panel.setLastPriceRefresh(Instant.now());
 
 		if (all.isEmpty())
 		{
@@ -1144,6 +1145,21 @@ public class PricewatchPlugin extends Plugin implements WatchlistActions
 			if (watchedItems.remove(itemId) == null)
 				return;
 
+			persistWatchedItems();
+			refreshPanel();
+		});
+	}
+
+	/** Empties the watchlist, taking each item's alerts and overlay slot with it. */
+	@Override
+	public void clearWatchlist()
+	{
+		clientThread.invokeLater(() ->
+		{
+			if (watchedItems.isEmpty())
+				return;
+
+			watchedItems.clear();
 			persistWatchedItems();
 			refreshPanel();
 		});
