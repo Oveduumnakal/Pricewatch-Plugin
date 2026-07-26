@@ -4,18 +4,19 @@
  */
 package com.oveduumnakal.pricewatch;
 
+import java.awt.Color;
 import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.assertSame;
 
 /**
- * Tests for the watchlist row's price line: when it is omitted entirely, which
- * of the unpriced states it falls into, which columns it renders, and how the
- * change indicator tints a figure that moved.
+ * Tests for the pure decisions behind a watchlist row: which placeholder stands in when
+ * there are no figures to draw, which volume a window reports, and how the change
+ * indicator recolours a figure that moved.
  *
- * <p>Only the pure text logic is covered — building the row itself needs a live
+ * <p>Only that logic is covered — building the row itself needs a live
  * {@code ItemManager} and a Swing toolkit.
  */
 public class PricewatchPanelTest
@@ -44,143 +45,147 @@ public class PricewatchPanelTest
 		return item;
 	}
 
+	/** @return a resting colour distinct from every movement tint. */
+	private static Color resting()
+	{
+		return new Color(0x11, 0x22, 0x33);
+	}
+
 	@Test
-	public void noneWindowOmitsTheLineEntirely()
+	public void noneWindowLeavesNothingToShow()
 	{
 		PricewatchPanel.PriceLineOptions off = new PricewatchPanel.PriceLineOptions(
 				TimeWindow.NONE, true, true, true, true, PriceIndicatorMode.CHANGE);
 
-		assertNull(PricewatchPanel.priceText(priced(100, 90), off));
+		assertEquals("No figures selected", PricewatchPanel.rowStatus(priced(100, 90), off));
 	}
 
 	@Test
-	public void turningEveryColumnOffAlsoOmitsTheLine()
+	public void turningEveryColumnOffLeavesNothingToShow()
 	{
 		PricewatchPanel.PriceLineOptions bare = new PricewatchPanel.PriceLineOptions(
 				TimeWindow.LIVE, false, false, false, false, PriceIndicatorMode.CHANGE);
 
-		assertNull(PricewatchPanel.priceText(priced(100, 90), bare));
+		assertEquals("No figures selected", PricewatchPanel.rowStatus(priced(100, 90), bare));
 	}
 
 	@Test
-	public void nonTradeableWinsOverAFailedLoad()
+	public void anUntradeableItemSaysSoInsteadOfShowingFigures()
 	{
-		WatchedItem item = item();
+		WatchedItem item = priced(100, 90);
 
 		item.setTradeable(false);
-		item.setPriceLoadFailed(true);
 
-		assertEquals("Not tradeable", PricewatchPanel.priceText(item, defaults()));
+		assertEquals("Not tradeable", PricewatchPanel.rowStatus(item, defaults()));
 	}
 
 	@Test
-	public void failedPriceLoadSaysSo()
+	public void aFailedPriceLoadSaysSoInsteadOfShowingFigures()
 	{
 		WatchedItem item = item();
 
 		item.setPriceLoadFailed(true);
 
-		assertEquals("No price data", PricewatchPanel.priceText(item, defaults()));
+		assertEquals("Unable to load price", PricewatchPanel.rowStatus(item, defaults()));
 	}
 
 	@Test
-	public void tradeableItemAwaitingItsFirstFetchLoads()
+	public void anItemAwaitingItsFirstPriceReportsLoading()
 	{
-		assertEquals("Loading...", PricewatchPanel.priceText(item(), defaults()));
+		assertEquals("Prices loading...", PricewatchPanel.rowStatus(item(), defaults()));
 	}
 
 	@Test
-	public void defaultLineShowsHighAndLowAbbreviated()
+	public void aPricedItemHasNoPlaceholderAtAll()
 	{
-		String line = PricewatchPanel.priceText(priced(1_500_000, 1_450_000), defaults());
-
-		assertTrue(line, line.contains("H 1.5M"));
-		assertTrue(line, line.contains("L 1.45M"));
+		assertNull(PricewatchPanel.rowStatus(priced(1_500_000, 1_450_000), defaults()));
 	}
 
 	@Test
-	public void columnsCanBeSwitchedOnIndividually()
-	{
-		WatchedItem item = priced(200, 100);
-		PricewatchPanel.PriceLineOptions avgOnly = new PricewatchPanel.PriceLineOptions(
-				TimeWindow.LIVE, false, false, true, false, PriceIndicatorMode.OFF);
-
-		item.setAvgPrice(150);
-
-		String line = PricewatchPanel.priceText(item, avgOnly);
-
-		assertTrue(line, line.contains("A 150"));
-		assertTrue(line, !line.contains("H "));
-		assertTrue(line, !line.contains("L "));
-	}
-
-	@Test
-	public void latestWindowCarriesNoVolumeSoItRendersADash()
-	{
-		PricewatchPanel.PriceLineOptions volumeOnly = new PricewatchPanel.PriceLineOptions(
-				TimeWindow.LIVE, false, false, false, true, PriceIndicatorMode.OFF);
-
-		String line = PricewatchPanel.priceText(priced(200, 100), volumeOnly);
-
-		assertTrue(line, line.contains("V &mdash;"));
-	}
-
-	@Test
-	public void aRisingPriceIsTintedGreenAndAFallingOneRed()
+	public void aNamedWindowReportsItsOwnVolume()
 	{
 		WatchedItem item = priced(200, 100);
 
-		item.setHighDelta(1);
-		item.setLowDelta(-1);
+		item.getWindowStats().put(TimeWindow.H1, new PriceStats(200, 100, 150, 4_000));
 
-		String line = PricewatchPanel.priceText(item, defaults());
-
-		assertTrue(line, line.contains("#28c258"));
-		assertTrue(line, line.contains("#e3463f"));
+		assertEquals(4_000, PricewatchPanel.volumeFor(item, TimeWindow.H1));
 	}
 
 	@Test
-	public void indicatorOffLeavesEveryFigureUntinted()
+	public void aNamedWindowWithoutStatsReportsNoVolume()
+	{
+		assertEquals(0, PricewatchPanel.volumeFor(priced(200, 100), TimeWindow.H1));
+	}
+
+	/**
+	 * The wiki's latest-price endpoint carries no volume, so the default Live line borrows
+	 * the widest window that reports one rather than always drawing a dash — which is what
+	 * made the Show Volume setting look like it did nothing.
+	 */
+	@Test
+	public void theLiveWindowBorrowsTheWidestReportedVolume()
 	{
 		WatchedItem item = priced(200, 100);
-		PricewatchPanel.PriceLineOptions noTint = new PricewatchPanel.PriceLineOptions(
-				TimeWindow.LIVE, true, true, false, false, PriceIndicatorMode.OFF);
 
-		item.setHighDelta(1);
+		item.getWindowStats().put(TimeWindow.H1, new PriceStats(200, 100, 150, 1_000));
+		item.getWindowStats().put(TimeWindow.H24, new PriceStats(200, 100, 150, 9_000));
 
-		String line = PricewatchPanel.priceText(item, noTint);
-
-		assertTrue(line, !line.contains("<font"));
+		assertEquals(9_000, PricewatchPanel.volumeFor(item, TimeWindow.LIVE));
 	}
 
 	@Test
-	public void changeModeLeavesAnUnmovedFigureUntintedButAllMarksIt()
+	public void theLiveWindowFallsPastWindowsReportingNoVolume()
 	{
 		WatchedItem item = priced(200, 100);
+
+		item.getWindowStats().put(TimeWindow.H24, new PriceStats(200, 100, 150, 0));
+		item.getWindowStats().put(TimeWindow.H6, new PriceStats(200, 100, 150, 700));
+
+		assertEquals(700, PricewatchPanel.volumeFor(item, TimeWindow.LIVE));
+	}
+
+	@Test
+	public void theLiveWindowReportsNoVolumeWhenNoSeriesHasArrived()
+	{
+		assertEquals(0, PricewatchPanel.volumeFor(priced(200, 100), TimeWindow.LIVE));
+	}
+
+	@Test
+	public void aFigureThatRoseIsRecolouredUpwards()
+	{
+		assertEquals(Color.decode("#28c258"), defaults().movementColour(1, resting()));
+	}
+
+	@Test
+	public void aFigureThatFellIsRecolouredDownwards()
+	{
+		assertEquals(Color.decode("#e3463f"), defaults().movementColour(-1, resting()));
+	}
+
+	@Test
+	public void anUnchangedFigureKeepsItsRestingColour()
+	{
+		Color resting = resting();
+
+		assertSame(resting, defaults().movementColour(0, resting));
+	}
+
+	@Test
+	public void allModeMarksAnUnchangedFigureGrey()
+	{
 		PricewatchPanel.PriceLineOptions all = new PricewatchPanel.PriceLineOptions(
 				TimeWindow.LIVE, true, false, false, false, PriceIndicatorMode.ALL);
 
-		assertTrue(PricewatchPanel.priceText(item, defaults()), !PricewatchPanel
-				.priceText(item, defaults()).contains("<font"));
-
-		String allLine = PricewatchPanel.priceText(item, all);
-
-		assertTrue(allLine, allLine.contains("#a0a0a0"));
+		assertEquals(Color.decode("#a0a0a0"), all.movementColour(0, resting()));
 	}
 
 	@Test
-	public void averagedWindowsIgnoreTheLatestDeltas()
+	public void theIndicatorSwitchedOffLeavesEvenAMovedFigureResting()
 	{
-		WatchedItem item = priced(200, 100);
-		PricewatchPanel.PriceLineOptions hourly = new PricewatchPanel.PriceLineOptions(
-				TimeWindow.H1, true, false, false, false, PriceIndicatorMode.CHANGE);
+		PricewatchPanel.PriceLineOptions noTint = new PricewatchPanel.PriceLineOptions(
+				TimeWindow.LIVE, true, true, false, false, PriceIndicatorMode.OFF);
+		Color resting = resting();
 
-		item.setHighDelta(1);
-		item.getWindowStats().put(TimeWindow.H1, new PriceStats(500, 400, 450, 900));
-
-		String line = PricewatchPanel.priceText(item, hourly);
-
-		assertTrue(line, line.contains("H 500"));
-		assertTrue(line, !line.contains("<font"));
+		assertSame(resting, noTint.movementColour(1, resting));
 	}
 }
