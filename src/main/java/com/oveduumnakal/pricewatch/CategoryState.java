@@ -9,10 +9,10 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * One user-defined watched-item category: its display {@code name} and whether
+ * One user-defined tracked-item category: its display {@code name} and whether
  * its accordion group is currently {@code collapsed} in the panel. The ordered
  * list of these is the source of truth for category order, naming, and
- * collapsed state, persisted separately from the watched items themselves.
+ * collapsed state, persisted separately from the tracked items themselves.
  */
 @Data
 @AllArgsConstructor

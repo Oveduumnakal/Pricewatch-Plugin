@@ -93,24 +93,6 @@ public class ItemCategoryClassifierTest
 		assertEquals("Other", ItemCategoryClassifier.classify("Pure essence"));
 	}
 
-	/**
-	 * The runes a spellcast burns resolve to the category the Cast attribution keys on (#235), while
-	 * essence stays outside it — essence is a Runecrafting recipe input whose basis belongs on the
-	 * runes it becomes, so it must never be mistaken for a rune being burned by a cast.
-	 */
-	@Test
-	public void spellcastRunesAreRunesButEssenceIsNot()
-	{
-		assertEquals("Runes", ItemCategoryClassifier.classify("Fire rune"));
-		assertEquals("Runes", ItemCategoryClassifier.classify("Law rune"));
-		assertEquals("Runes", ItemCategoryClassifier.classify("Death rune"));
-		assertEquals("Runes", ItemCategoryClassifier.classify("Cosmic rune"));
-		assertEquals("Runes", ItemCategoryClassifier.classify("Astral rune"));
-		assertEquals("Runes", ItemCategoryClassifier.classify("Lava rune"));
-		assertEquals("Other", ItemCategoryClassifier.classify("Pure essence"));
-		assertEquals("Other", ItemCategoryClassifier.classify("Daeyalt essence"));
-	}
-
 	@Test
 	public void nullAndBlankAreOther()
 	{

@@ -1,57 +1,105 @@
 /*
  * Copyright (c) 2026, Oveduumnakal
  * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ *    list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ *    this list of conditions and the following disclaimer in the documentation
+ *    and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
+ * ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+ * ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+ * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 package com.oveduumnakal.pricewatch;
 
 import java.awt.BasicStroke;
 import java.awt.BorderLayout;
+import java.awt.CardLayout;
 import java.awt.Color;
-import java.awt.Container;
 import java.awt.Component;
+import java.awt.Container;
 import java.awt.Cursor;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
+import java.awt.Graphics;
 import java.awt.Graphics2D;
-import java.awt.Image;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.GridLayout;
+import java.awt.Image;
 import java.awt.Insets;
+import java.awt.MouseInfo;
 import java.awt.Point;
+import java.awt.Rectangle;
 import java.awt.RenderingHints;
-import java.awt.event.ActionListener;
+import java.awt.Toolkit;
+import java.awt.datatransfer.Clipboard;
+import java.awt.datatransfer.StringSelection;
+import java.awt.event.ActionEvent;
+import java.awt.event.ComponentAdapter;
+import java.awt.event.ComponentEvent;
+import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.awt.event.MouseListener;
+import java.awt.event.MouseMotionAdapter;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.awt.image.BufferedImage;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.text.NumberFormat;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.text.NumberFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
+import java.util.Date;
+import java.util.EnumMap;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Objects;
+import java.util.Set;
+import java.util.function.BiConsumer;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
-import java.util.stream.Collectors;
+import java.util.function.Function;
+import java.util.function.IntFunction;
+import java.util.function.Supplier;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
+import javax.swing.AbstractAction;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.DefaultCellEditor;
 import javax.swing.DefaultListCellRenderer;
-import javax.swing.DefaultListSelectionModel;
+import javax.swing.DefaultListModel;
 import javax.swing.Icon;
 import javax.swing.ImageIcon;
 import javax.swing.JButton;
+import javax.swing.JCheckBoxMenuItem;
 import javax.swing.JComboBox;
 import javax.swing.JComponent;
+import javax.swing.JDialog;
 import javax.swing.JEditorPane;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
@@ -60,695 +108,1387 @@ import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
+import javax.swing.JScrollBar;
 import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
 import javax.swing.JTable;
 import javax.swing.JTextArea;
+import javax.swing.JTextField;
+import javax.swing.JViewport;
+import javax.swing.KeyStroke;
 import javax.swing.ListSelectionModel;
-import javax.swing.ScrollPaneConstants;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import javax.swing.WindowConstants;
+import javax.swing.border.Border;
 import javax.swing.border.EmptyBorder;
 import javax.swing.border.MatteBorder;
 import javax.swing.event.DocumentEvent;
-import javax.swing.event.HyperlinkEvent;
 import javax.swing.event.DocumentListener;
-import javax.swing.event.ListSelectionListener;
+import javax.swing.event.HyperlinkEvent;
 import javax.swing.table.DefaultTableCellRenderer;
+import javax.swing.table.JTableHeader;
 import javax.swing.table.TableCellRenderer;
+import javax.swing.table.TableColumn;
 import javax.swing.table.TableColumnModel;
+import javax.swing.text.DefaultCaret;
 
+import lombok.Value;
+import lombok.extern.slf4j.Slf4j;
+
+import net.runelite.api.gameval.ItemID;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.ui.FontManager;
 import net.runelite.client.ui.PluginPanel;
 import net.runelite.client.ui.components.IconTextField;
+import net.runelite.client.ui.components.PluginErrorPanel;
 import net.runelite.client.util.AsyncBufferedImage;
 import net.runelite.client.util.ImageUtil;
 import net.runelite.client.util.LinkBrowser;
 import net.runelite.http.api.item.ItemPrice;
 
 /**
- * The side panel: a search field that adds items to the watchlist, and one row
- * per watched item showing its icon, name and latest prices.
+ * The plugin's side panel and its entire Swing UI.
  *
- * <p>List management is delegated to the plugin through {@link WatchlistActions};
- * the plugin pushes data back via {@link #rebuild}. The filter is the one piece
- * of view state the panel owns outright, since nothing outside it cares.
- * All methods run on the Swing EDT.
+ * <p>Uses a {@link CardLayout} to switch between two views: the main list of
+ * tracked items (with search, totals, and per-row prices/value/profit) and a
+ * per-item detail card (current values, market info, price/volume charts, a
+ * price overview grid, alch info, notification rules, and an editable
+ * acquisitions log). It also manages detail-section ordering/visibility, the
+ * price-change pulse animations, and the chart pop-out windows.
+ *
+ * <p>The panel is purely a view: it never touches game state directly. All
+ * actions (add/remove item, edit acquisitions/notifications, request detail
+ * data, clear) are delegated to the plugin through the callbacks supplied to the
+ * constructor, and the plugin pushes data back via {@link #rebuild} and
+ * {@link #refreshDetailData}. All methods run on the Swing EDT.
  */
+@Slf4j
 public class PricewatchPanel extends PluginPanel
 {
-	private static final int ICON_WIDTH = 32;
+	private static final NumberFormat NUMBER_FORMAT = NumberFormat.getNumberInstance(Locale.US);
 
-	private static final int MAX_SEARCH_RESULTS = 5;
+	private static final Color COLOR_HIGH = PricewatchColors.HIGH;
+	private static final Color COLOR_LOW  = PricewatchColors.LOW;
+	private static final Color COLOR_AVG  = PricewatchColors.AVG;
 
-	private static final int MIN_SEARCH_LENGTH = 2;
+	private static final Color COLOR_HIGH_STALE = new Color(70, 110, 70);
+	private static final Color COLOR_LOW_STALE  = new Color(110, 70, 70);
 
-	private static final Color ADD_GREEN = new Color(0, 153, 0);
-
-	private static final Color REMOVE_RED = new Color(0xc8, 0x4a, 0x42);
-
-	private static final String UP_HEX = "#28c258";
-
-	private static final String DOWN_HEX = "#e3463f";
-
-	private static final String FLAT_HEX = "#a0a0a0";
-
-	private static final Color STAR_GOLD = new Color(0xf6, 0xd8, 0x73);
-
-	private static final Color OVERLAY_ON = new Color(0x7a, 0x9d, 0xd3);
-
-	/** Grey used for traded-volume figures, which carry no up/down meaning of their own. */
-	private static final Color COLOR_VOLUME = new Color(200, 200, 200);
-
-	/** Fully transparent, so a hidden row button keeps its space without being drawn. */
-	private static final Color HIDDEN = new Color(0, 0, 0, 0);
-
-	/** Square edge of a row's quick buttons. */
-	private static final int BUTTON_SIZE = 20;
-
-	/** Indent that lines a row's figures up under its name rather than under its icon. */
-	private static final int PRICES_LEFT_PAD = 2;
-
-	/** Client property holding the colour a row button returns to when its row is hovered. */
-	private static final String BUTTON_RESTING_COLOR = "pricewatchButtonResting";
-
-	/** Client property marking a row button that carries a painted icon rather than a glyph. */
-	private static final String BUTTON_IS_ICON = "pricewatchButtonIsIcon";
-
-	/** Client property carrying the item id a row card stands for. */
-	private static final String ROW_ITEM_ID = "pricewatchItemId";
-
-	/** Full-number formatting for the tooltips behind each short-format figure. */
-	private static final NumberFormat NUMBER_FORMAT = NumberFormat.getIntegerInstance(Locale.US);
-
-	private static final int GRAPH_HEIGHT = 140;
-
-	private static final int ALERTS_TABLE_HEIGHT = 96;
-
-	/** Timeframes a rule may be measured over; the shorter GE windows only add noise here. */
-	private static final TimeWindow[] ALERT_WINDOWS = {
-			TimeWindow.LIVE, TimeWindow.M5, TimeWindow.H1, TimeWindow.H6,
-			TimeWindow.H24, TimeWindow.WEEK, TimeWindow.MONTH,
-	};
-
-	private static final int POPOUT_WIDTH = 720;
-
-	private static final int POPOUT_HEIGHT = 460;
-
-	private static final int CHANGELOG_WIDTH = 608;
-
-	private static final int CHANGELOG_HEIGHT = 560;
-
-	/** Width of the changelog window's release navigation column. */
-	private static final int CHANGELOG_NAV_WIDTH = 168;
-
-	private static final String WIKI_BASE = "https://oldschool.runescape.wiki/w/";
-
-	private static final String PRICES_BASE = "https://prices.runescape.wiki/osrs/item/";
+	private static final Color TINT_HIGH = PricewatchColors.TINT_HIGH;
+	private static final Color TINT_LOW  = PricewatchColors.TINT_LOW;
+	private static final Color TINT_AVG  = PricewatchColors.TINT_AVG;
+	private static final Color TINT_VOLUME = PricewatchColors.TINT_VOLUME;
 
 	private final ItemManager itemManager;
-
 	private final PricewatchConfig config;
+	private final BiConsumer<Integer, TrackItemMode> onAddItem;
+	private final Consumer<Integer> onRemoveItem;
+	private final Consumer<Integer> onAcquisitionsEdited;
+	private final Consumer<Integer> onRequestDetailData;
+	private final Consumer<Integer> onClearAcquisitions;
+	private final Consumer<Integer> onNotificationsEdited;
+	private final Runnable onClearAll;
+	private final IntFunction<String> examineLookup;
+	/** Reorder callback: (itemId, targetIndex) — moves the item to a new position in the tracked list. */
+	private final BiConsumer<Integer, Integer> onReorder;
+	/** Drag-reorder callback: replaces the full tracked-item order with the given id sequence. */
+	private final Consumer<List<Integer>> onSetGlobalOrder;
+	/** Flips the persisted compact-view config flag; the resulting config change rebuilds the list. */
+	private final Runnable onToggleCompactView;
+	private final Consumer<SortMode> onSetSortMode;
+	/** Flips the persisted sort-direction flag; the resulting config change rebuilds the list. */
+	private final Runnable onToggleSortDirection;
+	/** Favorite toggle callback: (itemId, favorite) — pins/unpins an item to the top Favorites group. */
+	private final BiConsumer<Integer, Boolean> onSetFavorite;
+	/** Overlay toggle callback: (itemId, onOverlay) — adds/removes an item from the on-screen overlay. */
+	private final BiConsumer<Integer, Boolean> onSetOnOverlay;
+	/** Group collapse callback: (groupKey, collapsed) — persists a group's accordion state. */
+	private final BiConsumer<String, Boolean> onSetGroupCollapsed;
+	/** Category create/rename/delete/reorder and per-item assignment operations. */
+	private final CategoryActions categoryActions;
+	/** Builds the shareable tracked-list token on the client thread and delivers it back on the EDT. */
+	private final Consumer<Consumer<String>> onExportList;
+	/** Imports a tracked-list token (merge, non-destructive); delivers a user-facing result message on the EDT. */
+	private final BiConsumer<String, Consumer<String>> onImportList;
+	/** Builds the acquisitions CSV on the client thread and delivers it back on the EDT. */
+	private final Consumer<Consumer<String>> onExportCsv;
+	/** Supplies the portfolio value history points ({@code {epochSeconds, value, costBasis}}) for the chart. */
+	private final Supplier<List<long[]>> onPortfolioHistory;
+	/** Bundled release notes shown in the changelog window. */
+	private final Changelog changelog;
+	/** Callback to persist that the current release's "What's New" has been seen. */
+	private final Runnable onWhatsNewSeen;
+	/** Whether the footer indicator is currently in the highlighted "What's New" state. */
+	private boolean whatsNew;
+	/** The footer "What's New ✨" / "Change log" indicator button. */
+	private JButton changelogButton;
 
-	private final WatchlistActions actions;
+	/** Latest category state from the plugin, used to render the grouped/accordion list. */
+	private List<CategoryState> categories = new ArrayList<>();
+	private boolean favoritesCollapsed;
+	private boolean uncategorizedCollapsed;
 
-	private final IconTextField searchField = new IconTextField();
+	/**
+	 * Whether the list is currently grouped (favorites or categories active); disables drag
+	 * reorder, which is global-order only.
+	 */
+	private boolean groupingActive;
 
-	private final IconTextField filterField = new IconTextField();
+	/** Last-rendered items/mode, retained so toggling manage mode can re-render rows without a full plugin refresh. */
+	private List<TrackedItem> lastRenderItems = new ArrayList<>();
+	private PriceIndicatorMode lastRenderIndicatorMode = PriceIndicatorMode.OFF;
 
-	private final JPanel searchResults = new JPanel();
+	/** Item ids in current display order, kept in sync on each {@link #rebuild}, used to compute reorder targets. */
+	private final List<Integer> orderedItemIds = new ArrayList<>();
 
-	private final JPanel list = new JPanel();
+	/** Whether the list is in reorder mode, which reveals the per-row drag/arrow strip. */
+	private boolean reorderMode = false;
 
-	private final JLabel empty = new JLabel("Search to add an item", SwingConstants.CENTER);
+	/** Header toggle that enters/exits reorder mode. */
+	private JLabel reorderToggle;
 
-	private final JLabel sortToggle = new JLabel("", SwingConstants.CENTER);
+	/**
+	 * Header toggle that switches between the standard and compact row layouts. Its
+	 * {@code ≣} glyph renders from a taller fallback font, so it uses a shrunken derived
+	 * font to match the other header icons.
+	 */
+	private JLabel compactToggle;
 
-	private final JLabel filterToggle = new JLabel();
+	/** Header button (manage mode only) that opens the Manage Categories dialog. */
+	private JLabel categoriesButton;
 
-	private final JLabel compactToggle = new JLabel("≣", SwingConstants.CENTER);
+	/** Header toggle that shows/hides the tracked-list filter field. */
+	private JLabel filterToggle;
 
-	private final JLabel categoriesButton = new JLabel();
+	/** Header toggle that opens the sort-mode menu; highlighted when a non-manual sort is active. */
+	private JLabel sortToggle;
 
-	private final JLabel reorderToggle = new JLabel("⚙", SwingConstants.CENTER);
+	private final CardLayout cardLayout = new CardLayout();
 
-	/** Footer countdown to the next price refresh. */
-	private final JLabel lastRefreshLabel = new JLabel("Prices not yet loaded", SwingConstants.CENTER);
+	private final JPanel cardsHost = new JPanel(cardLayout)
+	{
+		/**
+		 * Sizes the host to the visible card, letting the logged-out placeholder and
+		 * loading spinner fill the viewport so they center vertically. The fill target
+		 * subtracts the scroll view's vertical insets (PricewatchPanel's border) so the
+		 * card fills exactly the visible area; targeting the raw extent height would
+		 * overflow by the border and show a spurious scroll bar.
+		 */
+		@Override
+		public Dimension getPreferredSize()
+		{
+			Dimension base = super.getPreferredSize();
+
+			for (Component c : getComponents())
+			{
+				if (c.isVisible())
+				{
+					base = c.getPreferredSize();
+					break;
+				}
+			}
+
+			if ((loggedOutCard != null && loggedOutCard.isVisible())
+					|| detailLoadingCard.isVisible())
+			{
+				JViewport viewport = (JViewport) SwingUtilities.getAncestorOfClass(JViewport.class, this);
+
+				if (viewport != null)
+				{
+					Insets insets = PricewatchPanel.this.getInsets();
+					int target = viewport.getExtentSize().height - insets.top - insets.bottom;
+
+					return new Dimension(base.width, Math.max(base.height, target));
+				}
+			}
+
+			return base;
+		}
+	};
+	private static final String CARD_MAIN = "main";
+	private static final String CARD_DETAIL = "detail";
+	private static final String CARD_DETAIL_LOADING = "detailLoading";
+	private static final String CARD_LOGGED_OUT = "loggedOut";
+
+	private final Map<Integer, TrackedItem> currentItems = new HashMap<>();
+	/**
+	 * 18px row icons keyed by {@link #iconCacheKey} (item id + rendered stack size), so
+	 * quantity-aware sprites are cached per stack.
+	 */
+	private final Map<Long, ImageIcon> rowIconCache = new HashMap<>();
+	private int detailItemId = -1;
+
+	/** The logged-out placeholder card; tracked so {@link #cardsHost} can fill the viewport while it shows. */
+	private JPanel loggedOutCard;
+
+	/**
+	 * A transient, read-only item shown in the detail view via {@link #showPreview} but
+	 * never added to the tracked list.
+	 */
+	private TrackedItem previewItem;
+
+	/** Placeholder card showing a spinner while a preview item's prices are still being fetched. */
+	private final JPanel detailLoadingCard = new JPanel(new GridBagLayout());
+	private final Spinner detailSpinner = new Spinner();
+
+	/** One-shot safety net that reveals the detail view if a preview's prices never arrive. */
+	private Timer detailLoadTimeout;
+
+	/** Set when {@link #detailLoadTimeout} fires so the spinner stops waiting on a load that failed silently. */
+	private boolean detailLoadTimedOut;
+
+	private final JPanel detailCard = new JPanel(new BorderLayout(0, 8));
+	private final JLabel detailIconLabel = new JLabel();
+	private final JLabel detailNameLabel = new JLabel();
+	private final JLabel detailQtyLabel = new JLabel();
+	/**
+	 * Examine text renderer. A line-wrapping {@link JTextArea} rather than an HTML {@link JLabel}:
+	 * Swing ignores CSS width with the RuneScape font, so HTML labels render one clipped line, while
+	 * a text area wraps to its actual laid-out width and re-wraps responsively on resize. The
+	 * maximum-height cap keeps the surrounding {@code BoxLayout} from stretching it past its text.
+	 */
+	private final JTextArea detailDescriptionArea = new JTextArea()
+	{
+		@Override
+		public Dimension getMaximumSize()
+		{
+			return new Dimension(Integer.MAX_VALUE, getPreferredSize().height);
+		}
+	};
+
+	private final JLabel icvHigh = new JLabel();
+	private final JLabel icvLow = new JLabel();
+	private final JLabel icvAvg = new JLabel();
+	private final JLabel icvVolume = new JLabel();
+
+	private JPanel ccvSection;
+	private final JLabel ccvHigh = new JLabel();
+	private final JLabel ccvLow = new JLabel();
+	private final JLabel ccvAvg = new JLabel();
+	private final JLabel ccvQuantity = new JLabel();
+	private final JLabel ccvProfit = new JLabel();
+
+	private final JLabel miBuyLimit = new JLabel();
+	private final JLabel miGeTax = new JLabel();
+	private final JLabel miLastBought = new JLabel();
+	private final JLabel miLastSold = new JLabel();
+	private final JLabel miVolatility = new JLabel();
+	private final JLabel miLiquidity = new JLabel();
+	private PriceRangeBar priceRangeBar;
+	private final JLabel rangePositionLabel = new JLabel();
+
+	private BuySellBar buySellBar;
+	private final JLabel pressureMarketLabel = new JLabel();
+	private final PressureVolumeLabel buyPressureLabel = new PressureVolumeLabel();
+	private final PressureVolumeLabel sellPressureLabel = new PressureVolumeLabel();
+
+	private final JLabel haValue = new JLabel();
+	private final JLabel haProfit = new JLabel();
+	private final JLabel laValue = new JLabel();
+	private final JLabel laProfit = new JLabel();
+	private final JLabel alchEstProfit = new JLabel();
+	private JPanel alchEstProfitRow;
+
+	private long natureRunePrice;
+	private long fireRunePrice;
+
+	private AcquisitionsTableModel acquisitionsModel;
+	private JTable acquisitionsTable;
+	private int acqHoverRow = -1;
+	private int acqHoverCol = -1;
+	private JScrollPane acquisitionsScroll;
+	private JPanel acquisitionsSection;
+	private NotificationsTableModel notificationsModel;
+	private JTable notificationsTable;
+
+	private volatile boolean editingNotifications;
+	private JPanel notificationsSection;
+	private static final int DEFAULT_NOTIFICATION_ROWS = 5;
+
+	private JButton acqPopoutButton;
+	private AcquisitionsTableModel acqPopoutModel;
+	private JTable acqPopoutTable;
+	private JScrollPane acqPopoutScroll;
+	private JPanel overviewGrid;
+	private PriceGraphPanel priceGraph;
+	private PriceGraphPanel volumeGraph;
+
+	private JPanel topStack;
+	private String detailExamineText;
+	private JPanel detailSectionsHost;
+	private JPanel itemValuesSection;
+	private JPanel marketInfoSection;
+	private JPanel priceOverviewSection;
+	private JPanel priceGraphSection;
+	private JPanel volumeGraphSection;
+	private JPanel alchInfoSection;
+	private JPanel linksSection;
+	private String appliedSectionLayout;
+	private Set<TimeWindow> appliedOverviewRows;
+
+	private final Map<TimeWindow, JLabel[]> overviewLabels = new EnumMap<>(TimeWindow.class);
+	private final List<JLabel> overviewWindowLabels = new ArrayList<>();
+	private static final TimeWindow[] OVERVIEW_WINDOWS = {
+			TimeWindow.LIVE, TimeWindow.M5, TimeWindow.H1, TimeWindow.H3, TimeWindow.H6, TimeWindow.H12,
+			TimeWindow.H24, TimeWindow.WEEK, TimeWindow.MONTH, TimeWindow.MONTH3,
+			TimeWindow.MONTH6, TimeWindow.YEAR
+	};
+	private final IconTextField searchField;
+	private final JPanel searchResultsPanel;
+
+	/** Name filter over the tracked list, shown only when the list overflows into scrolling. */
+	private IconTextField trackedFilterField;
+	private String trackedFilter = "";
+
+	private final JPanel trackedItemsPanel;
+	private final JPanel bottomPanel;
+	private final JLabel totalsTitle;
+	/** Title row hosting {@link #totalsTitle} and the chart pop-out button; carries the toggle-able divider. */
+	private JPanel totalsTitleRow;
+	/** Opens the portfolio value chart; hidden until at least two history points exist to plot. */
+	private JButton portfolioChartButton;
+	/** WEST strut balancing {@link #portfolioChartButton} so the title stays centred; toggled with it. */
+	private Component portfolioChartStrut;
+	private final JPanel geEstimatesSlotTop = new JPanel(new BorderLayout());
+	private final JPanel geEstimatesSlotBottom = new JPanel(new BorderLayout());
+	private EstimatesPosition currentEstimatesPosition;
+
+	private static final Color DIVIDER_COLOR = PricewatchColors.DIVIDER;
+	/**
+	 * Fainter divider above the footer's Report/Request row: dimmer than
+	 * {@link #DIVIDER_COLOR} but still visible over the (40,40,40) background.
+	 */
+	private static final Color FOOTER_DIVIDER_COLOR = PricewatchColors.TABLE_GRID;
+	private static final Color OVERVIEW_ROW_DIVIDER = new Color(45, 45, 45);
+	private static final Border TITLE_BORDER_WITH_TOP_DIVIDER =
+			BorderFactory.createCompoundBorder(
+					BorderFactory.createCompoundBorder(
+							new EmptyBorder(10, 0, 0, 0),
+							new MatteBorder(1, 0, 0, 0, DIVIDER_COLOR)),
+					new EmptyBorder(10, 0, 12, 0));
+	private static final Border TITLE_BORDER_NO_DIVIDER =
+			new EmptyBorder(10, 0, 12, 0);
+
+	private static final Border ESTIMATE_ROW_BORDER_DEFAULT =
+			new EmptyBorder(3, 0, 3, 0);
+	private static final Border ESTIMATE_ROW_BORDER_COMPACT =
+			new EmptyBorder(1, 0, 1, 0);
+	private static final Border PROFIT_SECTION_BORDER_DEFAULT =
+			BorderFactory.createCompoundBorder(
+					BorderFactory.createCompoundBorder(
+							new EmptyBorder(4, 0, 0, 0),
+							new MatteBorder(1, 0, 0, 0, DIVIDER_COLOR)),
+					new EmptyBorder(4, 0, 0, 0));
+	private static final Border PROFIT_SECTION_BORDER_COMPACT =
+			BorderFactory.createCompoundBorder(
+					BorderFactory.createCompoundBorder(
+							new EmptyBorder(1, 0, 0, 0),
+							new MatteBorder(1, 0, 0, 0, DIVIDER_COLOR)),
+					new EmptyBorder(1, 0, 0, 0));
+
+	private final JLabel totalHighLabel;
+	private final JLabel totalLowLabel;
+	private final JLabel totalAvgLabel;
+	private final JPanel totalHighRow;
+	private final JPanel totalLowRow;
+	private final JPanel totalAvgRow;
+
+	/** Static grey "Session:" prefix; never recoloured, mirroring the profit row's prefix. */
+	private final JLabel sessionLabel = new JLabel("Session:");
+	/** Value gained/lost since the session baseline (login or manual reset); the only part recoloured. */
+	private final JLabel sessionValueLabel = new JLabel();
+	/** The row wrapping {@link #sessionLabel}; toggled as a whole so no empty row lingers when hidden. */
+	private JPanel sessionRow;
+	/** In-memory session tracking; baseline captured on the first priced render after a reset. */
+	private final SessionStats sessionStats = new SessionStats();
+	/** The items from the most recent rebuild, so a session reset can re-render without one. */
+	private List<TrackedItem> lastRenderedItems = new ArrayList<>();
+
+	/** The standard totals rows (high/low/avg + profit), toggled off in compact view. */
+	private JPanel totalsRows;
+
+	/** Compact-view totals: a two-line "Total / profit (avg)" panel shown instead of the high/low/avg rows. */
+	private JPanel compactTotalsRows;
+	private JLabel compactTotalsCountLabel;
+	private JLabel compactTotalsValueLabel;
+
+	private final JLabel lastRefreshLabel;
+
+	private final JPanel footerPanel = new JPanel(new BorderLayout());
 
 	private final JButton clearButton = new JButton("Clear");
 
-	private final JButton shareButton = new JButton();
+	private volatile Instant lastPriceRefresh = null;
+	private final Set<Integer> trackedItemIds = new HashSet<>();
 
-	/**
-	 * Whether the reorganize mode is active, revealing each row's drag handle and category
-	 * picker. Off by default, so an ordinary watchlist is not cluttered with controls that
-	 * only matter while rearranging it.
-	 */
-	private boolean reorderMode;
-
-	/**
-	 * Whether the detail view is waiting for an item the plugin has not handed back yet.
-	 *
-	 * <p>Opening a preview from the search results asks the plugin for the item and draws
-	 * immediately, so the first redraw runs before the item exists. Without this the guard
-	 * that closes a detail view for a vanished item would cancel the open on that first pass.
-	 */
-	private boolean awaitingDetailItem;
-
-	/** When prices were last applied, driving the footer countdown. */
-	private volatile Instant lastPriceRefresh;
-
-	/** Ticks the footer countdown once a second, independently of price arrivals. */
-	private final Timer refreshCountdown = new Timer(1000, e -> updateRefreshLabel());
-
-	private final List<Integer> watchedIds = new ArrayList<>();
-
-	/** Where each rendered row sits, so a drop point can be resolved back to an item. */
-	private final List<RowRef> rowRefs = new ArrayList<>();
-
-	/**
-	 * The item whose row the pointer is currently over, or -1.
-	 *
-	 * <p>Rows are rebuilt wholesale on every price refresh, so this survives the rebuild and
-	 * lets the replacement row come back with its buttons already revealed instead of blinking
-	 * out from under the pointer.
-	 */
 	private int hoveredItemId = -1;
+	private final Timer refreshAgeTimer;
 
-	private List<WatchedItem> lastItems = new ArrayList<>();
+	/** Drag-reorder state. {@code dragItemId} is the item being dragged, or -1 when not dragging. */
+	private int dragItemId = -1;
+	/** The dragged item's group (visual-order item ids), so a drag stays within its group. */
+	private List<Integer> dragGroupIds = new ArrayList<>();
+	/** The list index where the dragged item would be inserted on drop. */
+	private int dragInsertIndex = -1;
+	/** The y-coordinate (in {@link #trackedItemsPanel} space) at which to paint the drop indicator line. */
+	private int dragLineY = -1;
+	/** Edge-autoscroll timer active while a drag hovers near the viewport top/bottom. */
+	private Timer dragScrollTimer;
+	/** Autoscroll direction while dragging: -1 up, +1 down, 0 none. */
+	private int dragScrollDir = 0;
+	private static final Color DRAG_LINE_COLOR = PricewatchColors.AVG;
+	private static final int DRAG_SCROLL_MARGIN = 28;
+	private static final int DRAG_SCROLL_STEP = 12;
+	/** Client property on each row card holding its item id, used to map drag positions to list indices. */
+	private static final String ROW_ITEM_ID = "pricewatchItemId";
+	/** Client property marking a group accordion header, used to find group boundaries during a drag. */
+	private static final String GROUP_HEADER_KEY = "pricewatchGroupHeader";
 
-	private WatchedItem lastPreview;
+	/** GitHub new-issue endpoint and templates; the footer forms deep-link here with fields prefilled. */
+	private static final String GITHUB_NEW_ISSUE = "https://github.com/Oveduumnakal/Pricewatch-Plugin/issues/new";
+	private static final String BUG_TEMPLATE = "bug_report.yml";
+	private static final String FEATURE_TEMPLATE = "feature_request.yml";
 
-	private ViewState lastView = new ViewState(
-			SortMode.MANUAL, false, false, new ArrayList<>(), false, false, new ArrayList<>(), 0, 0);
+	private static final Color LOADING_COLOR = PricewatchColors.MUTED;
+	private static final Color DESCRIPTION_COLOR = new Color(160, 160, 160);
+	private static final long LOADING_GLOW_PERIOD_MS = 2000;
+	private static final float LOADING_GLOW_MIN_ALPHA = 0.2f;
+	private final List<JLabel> loadingLabels = new ArrayList<>();
+	private final Timer loadingGlowTimer;
 
-	/** The item whose detail view is open, or {@code null} while the list is showing. */
-	private Integer detailItemId;
+	private static final long PULSE_DURATION_MS = 1000;
+	private static final int PRICES_LEFT_PAD = 10;
+	private static final int PRICES_RIGHT_PAD = 0;
+	private static final Color COLOR_VOLUME = new Color(200, 200, 200);
+	private final List<PulseEntry> pulseEntries = new ArrayList<>();
+	private final Timer pulseTimer;
+	private final JLabel totalHighDeltaLabel;
+	private final JLabel totalLowDeltaLabel;
+	private final JLabel totalAvgDeltaLabel;
+	private final JLabel coinsIcon;
+	private long lastCoinsIconValue = -1;
+	private final Map<Integer, ImageIcon> coinsIconCache = new HashMap<>();
 
-	/** Long-lived so a half-typed threshold survives the redraw a price refresh triggers. */
-	private final AlertsTableModel alertsModel = new AlertsTableModel(this::notifyAlertsEdited);
-
-	private final JTable alertsTable = new JTable(alertsModel);
-
-	/** Open chart windows, keyed by mode and item id. */
-	private final Map<String, PopoutHandle> popouts = new LinkedHashMap<>();
-
-	/** The header badge that opens the changelog window. */
-	private final JButton changelogButton = new JButton();
+	private final JLabel profitLabel;
+	private final JPanel profitSection;
 
 	/**
-	 * The open changelog window, or {@code null} when none is. Held apart from
-	 * {@link #popouts}, whose keys are parsed back into item ids on every refresh and
-	 * which has nothing to push into a window showing release notes.
-	 */
-	private JFrame changelogWindow;
-
-	/** Whether the badge is currently announcing a new release. */
-	private boolean whatsNew;
-
-	/**
-	 * Builds the empty panel.
+	 * Builds the panel and its two cards (main list and detail view). The header toggles
+	 * sit on their own right-justified row above the Tracked Items label.
 	 *
-	 * @param itemManager the client's item manager, used for icons and search
-	 * @param config      the plugin settings driving the price line
-	 * @param actions     what the panel calls back into when the user changes something
+	 * @param itemManager           for item names, icons, and prices
+	 * @param config                the plugin configuration
+	 * @param onAddItem             callback to start tracking an item in a mode
+	 * @param onRemoveItem          callback to stop tracking an item
+	 * @param onAcquisitionsEdited  callback after the acquisitions log is edited
+	 * @param onRequestDetailData   callback to request full history/metadata for an item
+	 * @param onClearAcquisitions   callback to clear an item's acquisitions
+	 * @param onNotificationsEdited callback after notification rules are edited
+	 * @param onClearAll            callback to clear all tracked items
+	 * @param examineLookup         resolves an item id to its examine text, or {@code null}
+	 * @param onReorder             callback to move an item to a new index in the tracked list
 	 */
-	public PricewatchPanel(ItemManager itemManager, PricewatchConfig config, WatchlistActions actions)
+	public PricewatchPanel(
+			ItemManager itemManager,
+			PricewatchConfig config,
+			BiConsumer<Integer, TrackItemMode> onAddItem,
+			Consumer<Integer> onRemoveItem,
+			Consumer<Integer> onAcquisitionsEdited,
+			Consumer<Integer> onRequestDetailData,
+			Consumer<Integer> onClearAcquisitions,
+			Consumer<Integer> onNotificationsEdited,
+			Runnable onClearAll,
+			IntFunction<String> examineLookup,
+			BiConsumer<Integer, Integer> onReorder,
+			Consumer<List<Integer>> onSetGlobalOrder,
+			Runnable onToggleCompactView,
+			Consumer<SortMode> onSetSortMode,
+			Runnable onToggleSortDirection,
+			BiConsumer<Integer, Boolean> onSetFavorite,
+			BiConsumer<Integer, Boolean> onSetOnOverlay,
+			BiConsumer<String, Boolean> onSetGroupCollapsed,
+			CategoryActions categoryActions,
+			Consumer<Consumer<String>> onExportList,
+			BiConsumer<String, Consumer<String>> onImportList,
+			Consumer<Consumer<String>> onExportCsv,
+			Supplier<List<long[]>> onPortfolioHistory,
+			Changelog changelog,
+			boolean whatsNew,
+			Runnable onWhatsNewSeen)
 	{
-		super(false);
-
 		this.itemManager = itemManager;
 		this.config = config;
-		this.actions = actions;
-		this.whatsNew = actions.isWhatsNew();
+		this.onAddItem = onAddItem;
+		this.onRemoveItem = onRemoveItem;
+		this.onAcquisitionsEdited = onAcquisitionsEdited;
+		this.onRequestDetailData = onRequestDetailData;
+		this.onClearAcquisitions = onClearAcquisitions;
+		this.onNotificationsEdited = onNotificationsEdited;
+		this.onClearAll = onClearAll;
+		this.examineLookup = examineLookup;
+		this.onReorder = onReorder;
+		this.onSetGlobalOrder = onSetGlobalOrder;
+		this.onToggleCompactView = onToggleCompactView;
+		this.onSetSortMode = onSetSortMode;
+		this.onToggleSortDirection = onToggleSortDirection;
+		this.onSetFavorite = onSetFavorite;
+		this.onSetOnOverlay = onSetOnOverlay;
+		this.onSetGroupCollapsed = onSetGroupCollapsed;
+		this.categoryActions = categoryActions;
+		this.onExportList = onExportList;
+		this.onImportList = onImportList;
+		this.onExportCsv = onExportCsv;
+		this.onPortfolioHistory = onPortfolioHistory;
+		this.changelog = changelog;
+		this.whatsNew = whatsNew;
+		this.onWhatsNewSeen = onWhatsNewSeen;
 
-		setLayout(new BorderLayout());
-		setBorder(new EmptyBorder(8, 8, 8, 8));
+		setLayout(new BorderLayout(0, 8));
+		setBorder(new EmptyBorder(10, 10, 10, 10));
 		setBackground(ColorScheme.DARK_GRAY_COLOR);
 
-		list.setLayout(new BoxLayout(list, BoxLayout.Y_AXIS));
-		list.setBackground(ColorScheme.DARK_GRAY_COLOR);
-
-		empty.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-
-		add(buildHeader(), BorderLayout.NORTH);
-		add(buildScrollingList(), BorderLayout.CENTER);
-		add(buildFooter(), BorderLayout.SOUTH);
-
-		refreshCountdown.start();
-	}
-
-	/** @return the title row, search field with its results dropdown, and the filter/sort/compact controls. */
-	private JPanel buildHeader()
-	{
-		final JPanel header = new JPanel(new BorderLayout());
-
-		header.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		header.setBorder(new EmptyBorder(0, 0, 6, 0));
-		header.add(buildTitleRow(), BorderLayout.NORTH);
-		header.add(buildSearchHeader(), BorderLayout.CENTER);
-		header.add(buildControls(), BorderLayout.SOUTH);
-
-		return header;
-	}
-
-	/**
-	 * @return the plugin name with the changelog badge beside it
-	 *
-	 *         <p>The badge sits east, which shrinks the centre region and would leave the
-	 *         title centred in what is left rather than in the row. A strut of the badge's
-	 *         own width balances the west side so the title sits on the row's true centre.
-	 */
-	private JPanel buildTitleRow()
-	{
-		final JLabel title = new JLabel("Pricewatch", SwingConstants.CENTER);
-
+		JLabel title = new JLabel("Pricewatch", SwingConstants.CENTER);
 		title.setForeground(Color.WHITE);
 		title.setFont(FontManager.getRunescapeBoldFont());
 		title.setBorder(new EmptyBorder(0, 0, 4, 0));
 
-		styleChangelogBadge();
+		changelogButton = buildChangelogBadge();
 		applyChangelogButtonStyle();
 
-		final JPanel row = new JPanel(new BorderLayout());
-		final Component balance = Box.createHorizontalStrut(
-				changelogButton.getPreferredSize().width);
+		JPanel titleWrapper = new JPanel(new BorderLayout());
+		titleWrapper.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		titleWrapper.add(title, BorderLayout.CENTER);
+		titleWrapper.add(changelogButton, BorderLayout.EAST);
 
-		row.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		row.add(balance, BorderLayout.WEST);
-		row.add(title, BorderLayout.CENTER);
-		row.add(changelogButton, BorderLayout.EAST);
+		searchResultsPanel = new JPanel();
+		searchResultsPanel.setLayout(new BoxLayout(searchResultsPanel, BoxLayout.Y_AXIS));
+		searchResultsPanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		searchResultsPanel.setVisible(false);
 
-		return row;
-	}
+		searchField = new IconTextField();
+		searchField.setIcon(IconTextField.Icon.SEARCH);
+		searchField.setPreferredSize(new Dimension(PluginPanel.PANEL_WIDTH - 20, 30));
+		searchField.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		searchField.setHoverBackgroundColor(ColorScheme.DARK_GRAY_HOVER_COLOR);
+		searchField.setMinimumSize(new Dimension(0, 30));
+		searchField.addClearListener(() -> searchResultsPanel.setVisible(false));
+		searchField.getDocument().addDocumentListener(new DocumentListener()
+		{
+			public void insertUpdate(DocumentEvent e)
+			{
+				onSearch(searchField.getText());
+			}
 
-	/**
-	 * @return the header's toggle row over the filter box
-	 *
-	 *         <p>Sort, filter, compact, categories and reorganize are icon toggles rather
-	 *         than labelled buttons, matching Stockpile: at panel width there is no room for
-	 *         five captions, and each toggle carries its state in colour instead.
-	 */
-	private JPanel buildControls()
-	{
-		filterField.setIcon(IconTextField.Icon.SEARCH);
-		filterField.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		filterField.setHoverBackgroundColor(ColorScheme.DARK_GRAY_HOVER_COLOR);
-		filterField.setMinimumSize(new Dimension(0, 24));
-		filterField.setPreferredSize(new Dimension(0, 24));
-		filterField.setVisible(false);
-		filterField.addClearListener(this::redraw);
-		filterField.getDocument().addDocumentListener(new FilterListener());
+			public void removeUpdate(DocumentEvent e)
+			{
+				onSearch(searchField.getText());
+			}
 
-		styleToggle(sortToggle, "Sort the watchlist", this::showSortMenu);
-		styleToggle(filterToggle, "Filter the watchlist", this::toggleFilterField);
-		styleToggle(compactToggle, "Toggle compact rows", actions::toggleCompactView);
-		styleToggle(categoriesButton, "Manage categories", this::openManageCategoriesDialog);
-		styleToggle(reorderToggle, "Rearrange the watchlist", this::toggleReorderMode);
+			public void changedUpdate(DocumentEvent e)
+			{
+				onSearch(searchField.getText());
+			}
+		});
 
-		installToggleHover(sortToggle, () -> lastView.getSortMode() != SortMode.MANUAL,
-				sortToggle::setForeground, this::updateSortToggle);
-		installToggleHover(filterToggle, filterField::isVisible,
-				colour -> filterToggle.setIcon(filterIcon(colour)), this::updateFilterToggle);
-		installToggleHover(compactToggle, () -> lastView.isCompact(),
-				compactToggle::setForeground, this::updateCompactToggle);
-		installToggleHover(categoriesButton, () -> false,
-				colour -> categoriesButton.setIcon(categoriesIcon(colour)),
-				() -> categoriesButton.setIcon(categoriesIcon(ColorScheme.LIGHT_GRAY_COLOR)));
-		installToggleHover(reorderToggle, () -> reorderMode,
-				reorderToggle::setForeground, this::updateReorderToggle);
+		trackedFilterField = new IconTextField();
+		trackedFilterField.setIcon(IconTextField.Icon.SEARCH);
+		trackedFilterField.setPreferredSize(new Dimension(PluginPanel.PANEL_WIDTH - 20, 28));
+		trackedFilterField.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		trackedFilterField.setHoverBackgroundColor(ColorScheme.DARK_GRAY_HOVER_COLOR);
+		trackedFilterField.setMinimumSize(new Dimension(0, 28));
+		trackedFilterField.setVisible(false);
+		trackedFilterField.addClearListener(this::onTrackedFilterChanged);
+		trackedFilterField.getDocument().addDocumentListener(new DocumentListener()
+		{
+			public void insertUpdate(DocumentEvent e)
+			{
+				onTrackedFilterChanged();
+			}
 
-		updateSortToggle();
-		updateFilterToggle();
-		updateCompactToggle();
-		updateReorderToggle();
-		categoriesButton.setIcon(categoriesIcon(ColorScheme.LIGHT_GRAY_COLOR));
+			public void removeUpdate(DocumentEvent e)
+			{
+				onTrackedFilterChanged();
+			}
 
-		final JPanel toggles = new JPanel();
+			public void changedUpdate(DocumentEvent e)
+			{
+				onTrackedFilterChanged();
+			}
+		});
 
-		toggles.setLayout(new BoxLayout(toggles, BoxLayout.X_AXIS));
-		toggles.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		toggles.add(sortToggle);
-		toggles.add(filterToggle);
-		toggles.add(compactToggle);
-		toggles.add(categoriesButton);
-		toggles.add(reorderToggle);
+		trackedItemsPanel = new JPanel()
+		{
+			@Override
+			protected void paintChildren(Graphics g)
+			{
+				super.paintChildren(g);
+				if (dragItemId != -1 && dragLineY >= 0)
+				{
+					g.setColor(DRAG_LINE_COLOR);
+					g.fillRect(2, dragLineY - 1, getWidth() - 4, 2);
+				}
+			}
+		};
+		trackedItemsPanel.setLayout(new BoxLayout(trackedItemsPanel, BoxLayout.Y_AXIS));
+		trackedItemsPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
 
-		final JPanel togglesRow = new JPanel(new BorderLayout());
+		JLabel trackedLabel = new JLabel("Tracked Items", SwingConstants.CENTER);
+		trackedLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		trackedLabel.setFont(FontManager.getRunescapeBoldFont());
+		trackedLabel.setBorder(new EmptyBorder(0, 0, 4, 0));
 
-		togglesRow.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		togglesRow.add(toggles, BorderLayout.EAST);
-
-		final JPanel controls = new JPanel(new BorderLayout(0, 4));
-
-		controls.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		controls.setBorder(new EmptyBorder(6, 0, 0, 0));
-		controls.add(togglesRow, BorderLayout.NORTH);
-		controls.add(filterField, BorderLayout.CENTER);
-
-		return controls;
-	}
-
-	/** Applies the shared look and click action to one of the header's icon toggles. */
-	private static void styleToggle(JLabel toggle, String tooltip, Runnable onClick)
-	{
-		toggle.setFont(FontManager.getRunescapeSmallFont());
-		toggle.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		toggle.setBorder(new EmptyBorder(2, 5, 2, 5));
-		toggle.setToolTipText(tooltip);
-		toggle.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-		toggle.addMouseListener(new MouseAdapter()
+		reorderToggle = new JLabel("⚙", SwingConstants.CENTER);
+		reorderToggle.setVerticalAlignment(SwingConstants.TOP);
+		reorderToggle.setAlignmentY(Component.TOP_ALIGNMENT);
+		reorderToggle.setFont(FontManager.getRunescapeBoldFont());
+		reorderToggle.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		reorderToggle.setBorder(new EmptyBorder(6, 0, 4, 6));
+		reorderToggle.setToolTipText("Reorganize tracked items");
+		reorderToggle.addMouseListener(new MouseAdapter()
 		{
 			@Override
 			public void mouseClicked(MouseEvent e)
 			{
-				onClick.run();
+				toggleReorderMode();
 			}
+		});
+		updateReorderToggle();
+
+		compactToggle = new JLabel("≣", SwingConstants.CENTER);
+		compactToggle.setVerticalAlignment(SwingConstants.TOP);
+		compactToggle.setAlignmentY(Component.TOP_ALIGNMENT);
+		compactToggle.setFont(FontManager.getRunescapeBoldFont().deriveFont(14f));
+		compactToggle.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		compactToggle.setBorder(new EmptyBorder(6, 0, 4, 6));
+		compactToggle.setToolTipText("Toggle compact view");
+		compactToggle.addMouseListener(new MouseAdapter()
+		{
+			@Override
+			public void mouseClicked(MouseEvent e)
+			{
+				if (onToggleCompactView != null)
+					onToggleCompactView.run();
+			}
+		});
+		updateCompactToggle();
+
+		categoriesButton = new JLabel();
+		categoriesButton.setIcon(categoriesIcon(ColorScheme.LIGHT_GRAY_COLOR));
+		categoriesButton.setVerticalAlignment(SwingConstants.TOP);
+		categoriesButton.setAlignmentY(Component.TOP_ALIGNMENT);
+		categoriesButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		categoriesButton.setBorder(new EmptyBorder(6, 0, 4, 6));
+		categoriesButton.setToolTipText("Manage categories");
+		categoriesButton.setVisible(false);
+		categoriesButton.addMouseListener(new MouseAdapter()
+		{
+			@Override
+			public void mouseClicked(MouseEvent e)
+			{
+				openManageCategoriesDialog();
+			}
+		});
+
+		sortToggle = new JLabel("⇅", SwingConstants.CENTER);
+		sortToggle.setVerticalAlignment(SwingConstants.TOP);
+		sortToggle.setAlignmentY(Component.TOP_ALIGNMENT);
+		sortToggle.setFont(FontManager.getRunescapeBoldFont());
+		sortToggle.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		sortToggle.setBorder(new EmptyBorder(6, 0, 4, 6));
+		sortToggle.setToolTipText("Sort tracked items");
+		sortToggle.addMouseListener(new MouseAdapter()
+		{
+			@Override
+			public void mouseClicked(MouseEvent e)
+			{
+				showSortMenu();
+			}
+		});
+		updateSortToggle();
+
+		filterToggle = new JLabel();
+		filterToggle.setVerticalAlignment(SwingConstants.TOP);
+		filterToggle.setAlignmentY(Component.TOP_ALIGNMENT);
+		filterToggle.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		filterToggle.setBorder(new EmptyBorder(6, 4, 4, 6));
+		filterToggle.setToolTipText("Filter tracked items");
+		filterToggle.addMouseListener(new MouseAdapter()
+		{
+			@Override
+			public void mouseClicked(MouseEvent e)
+			{
+				toggleTrackedFilter();
+			}
+		});
+		updateFilterToggle();
+
+		installToggleHover(reorderToggle, () -> reorderMode,
+				reorderToggle::setForeground, this::updateReorderToggle);
+		installToggleHover(sortToggle, () -> config.sortMode() != SortMode.MANUAL,
+				sortToggle::setForeground, this::updateSortToggle);
+		installToggleHover(compactToggle, config::compactView,
+				compactToggle::setForeground, this::updateCompactToggle);
+		installToggleHover(filterToggle, () -> trackedFilterField != null && trackedFilterField.isVisible(),
+				color -> filterToggle.setIcon(filterIcon(color)), this::updateFilterToggle);
+		installToggleHover(categoriesButton, () -> false,
+				color -> categoriesButton.setIcon(categoriesIcon(color)),
+				() -> categoriesButton.setIcon(categoriesIcon(ColorScheme.LIGHT_GRAY_COLOR)));
+
+		JPanel headerToggles = new JPanel();
+		headerToggles.setLayout(new BoxLayout(headerToggles, BoxLayout.X_AXIS));
+		headerToggles.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		headerToggles.add(sortToggle);
+		headerToggles.add(filterToggle);
+		headerToggles.add(compactToggle);
+		headerToggles.add(categoriesButton);
+		headerToggles.add(reorderToggle);
+
+		JPanel togglesRow = new JPanel(new BorderLayout());
+		togglesRow.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		togglesRow.add(headerToggles, BorderLayout.EAST);
+
+		JPanel trackedLabelWrapper = new JPanel(new BorderLayout(0, 2));
+		trackedLabelWrapper.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		trackedLabelWrapper.add(togglesRow, BorderLayout.NORTH);
+		trackedLabelWrapper.add(trackedLabel, BorderLayout.CENTER);
+
+		JPanel totalsPanel = new JPanel(new BorderLayout(6, 0));
+		totalsPanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		totalsPanel.setBorder(new EmptyBorder(6, 8, 6, 8));
+
+		coinsIcon = new JLabel();
+		coinsIcon.setPreferredSize(new Dimension(32, 32));
+		coinsIcon.setVerticalAlignment(SwingConstants.CENTER);
+		updateCoinsIcon(0);
+		totalsPanel.add(coinsIcon, BorderLayout.WEST);
+
+		totalsTitle = new JLabel("Estimated GE Sell Value", SwingConstants.CENTER);
+		totalsTitle.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		totalsTitle.setFont(FontManager.getRunescapeBoldFont());
+
+		portfolioChartButton = buildIconButton(buildChartIcon(), "View total tracked value over time",
+				this::openPortfolioChart);
+		portfolioChartButton.setVisible(false);
+
+		portfolioChartStrut = Box.createHorizontalStrut(portfolioChartButton.getPreferredSize().width);
+		portfolioChartStrut.setVisible(false);
+
+		totalsTitleRow = new JPanel(new BorderLayout());
+		totalsTitleRow.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		totalsTitleRow.setBorder(TITLE_BORDER_WITH_TOP_DIVIDER);
+		totalsTitleRow.add(portfolioChartStrut, BorderLayout.WEST);
+		totalsTitleRow.add(totalsTitle, BorderLayout.CENTER);
+		totalsTitleRow.add(portfolioChartButton, BorderLayout.EAST);
+
+		totalsRows = new JPanel();
+		totalsRows.setLayout(new BoxLayout(totalsRows, BoxLayout.Y_AXIS));
+		totalsRows.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+
+		totalHighLabel = new JLabel("High:  —");
+		totalHighLabel.setForeground(COLOR_HIGH);
+		totalHighLabel.setFont(FontManager.getRunescapeSmallFont());
+
+		totalLowLabel = new JLabel("Low:   —");
+		totalLowLabel.setForeground(COLOR_LOW);
+		totalLowLabel.setFont(FontManager.getRunescapeSmallFont());
+
+		totalAvgLabel = new JLabel("Avg:   —");
+		totalAvgLabel.setForeground(COLOR_AVG);
+		totalAvgLabel.setFont(FontManager.getRunescapeSmallFont());
+
+		totalHighDeltaLabel = createDeltaLabel();
+		totalLowDeltaLabel = createDeltaLabel();
+		totalAvgDeltaLabel = createDeltaLabel();
+
+		totalHighRow = buildTotalsRow(totalHighLabel, totalHighDeltaLabel);
+		totalLowRow = buildTotalsRow(totalLowLabel, totalLowDeltaLabel);
+		totalAvgRow = buildTotalsRow(totalAvgLabel, totalAvgDeltaLabel);
+
+		totalsRows.add(totalHighRow);
+		totalsRows.add(totalLowRow);
+		totalsRows.add(totalAvgRow);
+
+		compactTotalsRows = new JPanel();
+		compactTotalsRows.setLayout(new BoxLayout(compactTotalsRows, BoxLayout.Y_AXIS));
+		compactTotalsRows.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		compactTotalsRows.setVisible(false);
+
+		compactTotalsCountLabel = new JLabel("0 itm");
+		compactTotalsCountLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		compactTotalsCountLabel.setFont(FontManager.getRunescapeSmallFont());
+
+		JLabel compactTotalsTitle = new JLabel("Total");
+		compactTotalsTitle.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		compactTotalsTitle.setFont(FontManager.getRunescapeSmallFont());
+
+		JPanel compactCountRow = new JPanel(new BorderLayout(6, 0));
+		compactCountRow.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		compactCountRow.add(compactTotalsTitle, BorderLayout.WEST);
+		compactCountRow.add(compactTotalsCountLabel, BorderLayout.EAST);
+
+		compactTotalsValueLabel = new JLabel("—");
+		compactTotalsValueLabel.setForeground(COLOR_AVG);
+		compactTotalsValueLabel.setFont(FontManager.getRunescapeSmallFont());
+
+		JPanel compactValueRow = new JPanel(new BorderLayout(6, 0));
+		compactValueRow.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		compactValueRow.add(compactTotalsValueLabel, BorderLayout.WEST);
+
+		compactTotalsRows.add(compactCountRow);
+		compactTotalsRows.add(compactValueRow);
+
+		JPanel totalsRowsWrapper = new JPanel(new GridBagLayout());
+		totalsRowsWrapper.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		GridBagConstraints wrapC = new GridBagConstraints();
+		wrapC.fill = GridBagConstraints.HORIZONTAL;
+		wrapC.weightx = 1;
+		wrapC.gridy = 0;
+		totalsRowsWrapper.add(totalsRows, wrapC);
+		wrapC.gridy = 1;
+		totalsRowsWrapper.add(compactTotalsRows, wrapC);
+		totalsPanel.add(totalsRowsWrapper, BorderLayout.CENTER);
+
+		lastRefreshLabel = new JLabel("Prices not yet loaded", SwingConstants.CENTER);
+		lastRefreshLabel.setForeground(PricewatchColors.MUTED);
+		lastRefreshLabel.setFont(FontManager.getRunescapeSmallFont());
+
+		JLabel profitPrefixLabel = new JLabel("Est. Profit:");
+		profitPrefixLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		profitPrefixLabel.setFont(FontManager.getRunescapeSmallFont());
+		profitPrefixLabel.setToolTipText("Realized profit from sold lots plus unrealized "
+				+ "gain/loss on held lots (marked to the current average price)");
+
+		profitLabel = new JLabel("—");
+		profitLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		profitLabel.setFont(FontManager.getRunescapeSmallFont());
+
+		JPanel profitRow = new JPanel(new BorderLayout(6, 0));
+		profitRow.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		profitRow.add(profitPrefixLabel, BorderLayout.WEST);
+		profitRow.add(profitLabel, BorderLayout.CENTER);
+
+		profitSection = new JPanel(new BorderLayout());
+		profitSection.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		profitSection.setBorder(PROFIT_SECTION_BORDER_DEFAULT);
+		profitSection.add(profitRow, BorderLayout.CENTER);
+		profitSection.setVisible(false);
+		totalsRows.add(profitSection);
+
+		sessionLabel.setFont(FontManager.getRunescapeSmallFont());
+		sessionLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+
+		sessionValueLabel.setFont(FontManager.getRunescapeSmallFont());
+		sessionValueLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+
+		sessionRow = new JPanel();
+		sessionRow.setLayout(new BoxLayout(sessionRow, BoxLayout.X_AXIS));
+		sessionRow.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		sessionRow.setBorder(ESTIMATE_ROW_BORDER_DEFAULT);
+		sessionRow.add(sessionLabel);
+		sessionRow.add(Box.createRigidArea(new Dimension(6, 0)));
+		sessionRow.add(sessionValueLabel);
+		sessionRow.add(Box.createHorizontalGlue());
+		totalsRows.add(sessionRow);
+
+		MouseAdapter sessionResetListener = new MouseAdapter()
+		{
+			@Override
+			public void mousePressed(MouseEvent e)
+			{
+				resetSession();
+			}
+		};
+
+		Stream.of(sessionRow, sessionLabel, sessionValueLabel).forEach(component ->
+		{
+			component.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+			component.setToolTipText("Value change since login — click to reset the session baseline");
+			component.addMouseListener(sessionResetListener);
+		});
+
+		bottomPanel = new JPanel(new BorderLayout(0, 0));
+		bottomPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		bottomPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+		bottomPanel.add(totalsTitleRow, BorderLayout.NORTH);
+		bottomPanel.add(totalsPanel, BorderLayout.CENTER);
+
+		geEstimatesSlotTop.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		geEstimatesSlotBottom.setBackground(ColorScheme.DARK_GRAY_COLOR);
+
+		JPanel topPanel = new JPanel();
+		topPanel.setLayout(new BoxLayout(topPanel, BoxLayout.Y_AXIS));
+		topPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		topPanel.add(titleWrapper);
+		topPanel.add(searchField);
+		topPanel.add(Box.createVerticalStrut(4));
+		topPanel.add(searchResultsPanel);
+		topPanel.add(geEstimatesSlotTop);
+		topPanel.add(trackedLabelWrapper);
+		topPanel.add(trackedFilterField);
+
+		JPanel mainCard = new JPanel(new BorderLayout(0, 8));
+		mainCard.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		mainCard.add(topPanel, BorderLayout.NORTH);
+
+		JPanel itemsAndTotals = new JPanel(new BorderLayout(0, 8));
+		itemsAndTotals.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		itemsAndTotals.add(trackedItemsPanel, BorderLayout.NORTH);
+		itemsAndTotals.add(geEstimatesSlotBottom, BorderLayout.CENTER);
+		mainCard.add(itemsAndTotals, BorderLayout.CENTER);
+
+		applyEstimatesPosition(EstimatesPosition.BOTTOM);
+
+		buildDetailCard();
+
+		loggedOutCard = new JPanel(new GridBagLayout());
+		loggedOutCard.setBackground(ColorScheme.DARK_GRAY_COLOR);
+
+		JPanel loggedOutMessage = new JPanel();
+		loggedOutMessage.setLayout(new BoxLayout(loggedOutMessage, BoxLayout.Y_AXIS));
+		loggedOutMessage.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		loggedOutMessage.setBorder(new EmptyBorder(10, 10, 10, 10));
+
+		for (String line : new String[]{"Log in to view", "your tracked items"})
+		{
+			JLabel lineLabel = new JLabel(line, SwingConstants.CENTER);
+			lineLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+			lineLabel.setFont(FontManager.getRunescapeSmallFont());
+			lineLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+			loggedOutMessage.add(lineLabel);
+		}
+
+		loggedOutCard.add(loggedOutMessage);
+
+		buildDetailLoadingCard();
+
+		cardsHost.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		cardsHost.add(mainCard, CARD_MAIN);
+		cardsHost.add(detailCard, CARD_DETAIL);
+		cardsHost.add(detailLoadingCard, CARD_DETAIL_LOADING);
+		cardsHost.add(loggedOutCard, CARD_LOGGED_OUT);
+		add(cardsHost, BorderLayout.CENTER);
+
+		cardLayout.show(cardsHost, CARD_LOGGED_OUT);
+
+		footerPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		footerPanel.setBorder(BorderFactory.createCompoundBorder(
+				new MatteBorder(1, 0, 0, 0, DIVIDER_COLOR),
+				new EmptyBorder(6, 10, 6, 10)));
+
+		JPanel refreshRow = new JPanel(new BorderLayout());
+		refreshRow.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		refreshRow.add(lastRefreshLabel, BorderLayout.CENTER);
+
+		clearButton.setFont(FontManager.getRunescapeSmallFont());
+		clearButton.setForeground(COLOR_LOW);
+		clearButton.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		clearButton.setFocusPainted(false);
+		clearButton.setToolTipText("Remove all tracked items, including their notifications and collection log");
+		clearButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		clearButton.setEnabled(false);
+		clearButton.addActionListener(e -> confirmAndClearAll());
+		refreshRow.add(clearButton, BorderLayout.EAST);
+
+		JPopupMenu shareMenu = new JPopupMenu();
+		shareMenu.add(buildFooterMenuItem("Export list", this::exportTrackedList,
+				"Copy a shareable code for your tracked list to the clipboard"));
+		shareMenu.add(buildFooterMenuItem("Import list", this::importTrackedList,
+				"Paste a tracked-list code to merge it into this profile"));
+		shareMenu.add(buildFooterMenuItem("Export acquisitions (CSV)", this::exportAcquisitionsCsv,
+				"Copy the acquisitions log as CSV to the clipboard"));
+
+		JPopupMenu feedbackMenu = new JPopupMenu();
+		feedbackMenu.add(buildFooterMenuItem("Report a bug", this::openReportIssueForm,
+				"Report a bug — fill it in here, then submit on GitHub"));
+		feedbackMenu.add(buildFooterMenuItem("Request a feature", this::openRequestFeatureForm,
+				"Request a feature — fill it in here, then submit on GitHub"));
+
+		JPanel linksRow = new JPanel(new GridLayout(1, 2, 6, 0));
+		linksRow.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		linksRow.setBorder(BorderFactory.createCompoundBorder(
+				new EmptyBorder(6, 0, 0, 0),
+				BorderFactory.createCompoundBorder(
+						new MatteBorder(1, 0, 0, 0, FOOTER_DIVIDER_COLOR),
+						new EmptyBorder(6, 0, 0, 0))));
+		linksRow.add(buildFooterMenu("Share", shareMenu,
+				"Export or import your tracked list, or export the acquisitions log"));
+		linksRow.add(buildFooterMenu("Feedback", feedbackMenu,
+				"Report a bug or request a feature"));
+
+		footerPanel.add(refreshRow, BorderLayout.CENTER);
+		footerPanel.add(linksRow, BorderLayout.SOUTH);
+
+		footerPanel.setVisible(false);
+		getWrappedPanel().add(footerPanel, BorderLayout.SOUTH);
+
+		refreshAgeTimer = new Timer(1000, e ->
+		{
+			updateRefreshLabel();
+			updateMarketInfoTimes();
+		});
+		refreshAgeTimer.start();
+
+		loadingGlowTimer = new Timer(50, e -> updateLoadingGlow());
+		loadingGlowTimer.start();
+
+		pulseTimer = new Timer(25, e -> updatePulses());
+		pulseTimer.start();
+
+		detailLoadTimeout = new Timer(12000, e ->
+		{
+			detailLoadTimedOut = true;
+			applyDetailCard();
+		});
+		detailLoadTimeout.setRepeats(false);
+	}
+
+	/** Moves the GE estimates block above or below the other sections per the configured position. */
+	private void applyEstimatesPosition(EstimatesPosition position)
+	{
+		if (position == currentEstimatesPosition && bottomPanel.getParent() != null)
+			return;
+
+		currentEstimatesPosition = position;
+		geEstimatesSlotTop.removeAll();
+		geEstimatesSlotBottom.removeAll();
+		if (position == EstimatesPosition.TOP)
+		{
+			totalsTitleRow.setBorder(TITLE_BORDER_NO_DIVIDER);
+			geEstimatesSlotTop.add(bottomPanel, BorderLayout.CENTER);
+			geEstimatesSlotTop.add(buildDividerStrip(), BorderLayout.SOUTH);
+		}
+		else
+		{
+			totalsTitleRow.setBorder(TITLE_BORDER_WITH_TOP_DIVIDER);
+			geEstimatesSlotBottom.add(bottomPanel, BorderLayout.NORTH);
+		}
+
+		geEstimatesSlotTop.revalidate();
+		geEstimatesSlotBottom.revalidate();
+		geEstimatesSlotTop.repaint();
+		geEstimatesSlotBottom.repaint();
+	}
+
+	/** Applies normal or compact row padding to the GE estimates block per the configured spacing. */
+	private void applyEstimatesSpacing(EstimatesSpacing spacing)
+	{
+		boolean compact = spacing == EstimatesSpacing.COMPACT;
+		Border rowBorder = compact
+				? ESTIMATE_ROW_BORDER_COMPACT : ESTIMATE_ROW_BORDER_DEFAULT;
+		totalHighRow.setBorder(rowBorder);
+		totalLowRow.setBorder(rowBorder);
+		totalAvgRow.setBorder(rowBorder);
+		profitSection.setBorder(compact
+				? PROFIT_SECTION_BORDER_COMPACT : PROFIT_SECTION_BORDER_DEFAULT);
+		bottomPanel.revalidate();
+		bottomPanel.repaint();
+	}
+
+	/** Builds the horizontal divider strip drawn between the totals block and the footer. */
+	private JPanel buildDividerStrip()
+	{
+		JPanel strip = new JPanel(new BorderLayout());
+		strip.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		strip.setBorder(BorderFactory.createCompoundBorder(
+				BorderFactory.createCompoundBorder(
+						new EmptyBorder(10, 0, 0, 0),
+						new MatteBorder(1, 0, 0, 0, DIVIDER_COLOR)),
+				new EmptyBorder(0, 0, 10, 0)));
+		return strip;
+	}
+
+	/** Stops the animation timers so the panel can be disposed cleanly. */
+	public void shutdown()
+	{
+		refreshAgeTimer.stop();
+		loadingGlowTimer.stop();
+		pulseTimer.stop();
+		stopDetailLoading();
+	}
+
+	private static final Dimension DELTA_LABEL_SIZE = new Dimension(12, 12);
+
+	/**
+	 * Updates the totals coin icon to the stack sprite for the given gp value, loading it
+	 * asynchronously and caching per quantity. A stale async load is discarded if the value
+	 * has moved on by the time the image arrives.
+	 */
+	private void updateCoinsIcon(long value)
+	{
+		int quantity = (int) Math.max(1, Math.min(value, Integer.MAX_VALUE));
+		if (quantity == lastCoinsIconValue)
+			return;
+
+		lastCoinsIconValue = quantity;
+
+		ImageIcon cached = coinsIconCache.get(quantity);
+		if (cached != null)
+		{
+			coinsIcon.setIcon(cached);
+			return;
+		}
+
+		AsyncBufferedImage img = itemManager.getImage(ItemID.COINS, quantity, false);
+		img.onLoaded(() ->
+		{
+			ImageIcon icon = new ImageIcon(img);
+			coinsIconCache.put(quantity, icon);
+			if (quantity == lastCoinsIconValue)
+				coinsIcon.setIcon(icon);
 		});
 	}
 
 	/**
-	 * Installs grey↔gold hover colouring on a header toggle: an inactive toggle previews
-	 * gold, an active one previews grey, and its resting colour is repainted on exit.
-	 *
-	 * @param active whether the toggle is currently in its gold state
-	 * @param paint  applies a colour, which is the foreground for a glyph and the icon for a
-	 *               painted toggle
-	 * @param rest   repaints the toggle's resting colour
+	 * Populates the compact totals: item count plus a {@code total avg value (profit)} line,
+	 * where the total avg uses the configured value format and the profit is always short format.
+	 * The profit parenthetical is coloured per-part — grey parentheses with a green/red profit —
+	 * while the parenthetical is dropped entirely when there is no cost-basis profit to show.
 	 */
-	private static void installToggleHover(JLabel toggle, BooleanSupplier active,
-			Consumer<Color> paint, Runnable rest)
+	private void updateCompactTotals(int itemCount, long totalAvg, long profit,
+			boolean hasPrices, boolean showProfit, ValueFormat fmt)
 	{
-		toggle.addMouseListener(new MouseAdapter()
+		compactTotalsCountLabel.setText(itemCount + " itm");
+		compactTotalsValueLabel.setForeground(COLOR_AVG);
+
+		if (!hasPrices)
+		{
+			compactTotalsValueLabel.setText("—");
+			compactTotalsValueLabel.setToolTipText(null);
+			return;
+		}
+
+		String avgText = formatTotalGp(totalAvg, fmt);
+
+		if (!showProfit)
+		{
+			compactTotalsValueLabel.setText(avgText);
+			compactTotalsValueLabel.setToolTipText(NUMBER_FORMAT.format(totalAvg) + " gp");
+			return;
+		}
+
+		String sign = profit > 0 ? "+" : "";
+		Color profitColor = profit == 0 ? ColorScheme.LIGHT_GRAY_COLOR : (profit > 0 ? COLOR_HIGH : COLOR_LOW);
+		String grey = PricewatchColors.toHex(ColorScheme.LIGHT_GRAY_COLOR);
+		String profitHex = PricewatchColors.toHex(profitColor);
+
+		compactTotalsValueLabel.setText("<html><span style='color:" + PricewatchColors.toHex(COLOR_AVG) + "'>" + avgText
+				+ "</span>  <span style='color:" + grey + "'>(</span><span style='color:" + profitHex
+				+ "'>" + sign + GpFormat.shortValue(profit) + "</span>"
+				+ "<span style='color:" + grey + "'>)</span></html>");
+		compactTotalsValueLabel.setToolTipText("<html>" + NUMBER_FORMAT.format(totalAvg) + " gp<br>Profit: "
+				+ sign + NUMBER_FORMAT.format(profit) + " gp</html>");
+	}
+
+	/**
+	 * Renders the "Session:" line: the value gained/lost since the baseline, coloured
+	 * green/red, with a tooltip splitting the change into price movement vs. quantity
+	 * change. Captures the baseline on the first priced render after a reset; hidden
+	 * until prices are available.
+	 */
+	private void updateSessionLine(List<TrackedItem> items, boolean hasPrices)
+	{
+		if (!config.showSession() || !hasPrices)
+		{
+			sessionRow.setVisible(false);
+			return;
+		}
+
+		Map<Integer, long[]> snapshot = liveSessionSnapshot(items);
+
+		if (snapshot.isEmpty())
+		{
+			sessionRow.setVisible(false);
+			return;
+		}
+
+		if (!sessionStats.hasBaseline())
+			sessionStats.reset(snapshot);
+		else
+			sessionStats.absorbNewItems(snapshot);
+
+		SessionStats.Delta delta = sessionStats.delta(snapshot);
+		long total = delta.getTotal();
+		Color color = total == 0 ? ColorScheme.LIGHT_GRAY_COLOR : (total > 0 ? COLOR_HIGH : COLOR_LOW);
+
+		sessionValueLabel.setForeground(color);
+		sessionValueLabel.setText(signedShort(total));
+
+		String tooltip = "<html>Since login:<br>"
+				+ "Price movement: " + signedGp(delta.getPrice()) + "<br>"
+				+ "Quantity change: " + signedGp(delta.getQuantity()) + "<br>"
+				+ "<i>click to reset</i></html>";
+		Stream.of(sessionRow, sessionLabel, sessionValueLabel).forEach(component -> component.setToolTipText(tooltip));
+		sessionRow.setVisible(true);
+	}
+
+	/**
+	 * Builds the session baseline snapshot (item id → [quantity, avg price]) from only the
+	 * items whose prices came from a live fetch. Cache-hydrated prices are excluded so
+	 * overnight market movement, restored from the persisted cache on login, never seeds
+	 * the baseline and reads as session profit. An empty result means the session row stays
+	 * hidden until real live prices arrive.
+	 */
+	static Map<Integer, long[]> liveSessionSnapshot(List<TrackedItem> items)
+	{
+		Map<Integer, long[]> snapshot = new HashMap<>();
+		for (TrackedItem item : items)
+			if (item.hasLivePrices())
+				snapshot.put(item.getItemId(), new long[]{item.getQuantity(), item.getAvgPrice()});
+
+		return snapshot;
+	}
+
+	/** Re-baselines the session to the current holdings, so "Session:" restarts from zero. */
+	public void resetSession()
+	{
+		sessionStats.clear();
+		boolean hasPrices = lastRenderedItems.stream().anyMatch(TrackedItem::hasPrices);
+		updateSessionLine(lastRenderedItems, hasPrices);
+	}
+
+	/**
+	 * Drops the session baseline without re-priming (used on profile change): the next
+	 * rebuild captures the new profile's holdings as the baseline.
+	 */
+	public void clearSessionBaseline()
+	{
+		sessionStats.clear();
+	}
+
+	/** Drops one item's session-baseline entry when it is untracked, so removal is session-neutral. */
+	public void removeSessionBaseline(int itemId)
+	{
+		sessionStats.removeItem(itemId);
+	}
+
+	/** @return the value in short gp with an explicit +/- sign (e.g. {@code +1.2M}, {@code -350K}). */
+	private String signedShort(long value)
+	{
+		String sign = value > 0 ? "+" : (value < 0 ? "-" : "");
+		return sign + GpFormat.shortValue(Math.abs(value));
+	}
+
+	/** Builds a small footer button that runs the given action when clicked. */
+	private JButton buildFooterLink(String text, Runnable onClick, String tooltip)
+	{
+		JButton button = styledFooterButton(text, tooltip);
+		button.addActionListener(e -> onClick.run());
+
+		return button;
+	}
+
+	/** A footer button that drops {@code menu} below itself, grouping related actions so the footer stays one row. */
+	private JButton buildFooterMenu(String text, JPopupMenu menu, String tooltip)
+	{
+		JButton button = styledFooterButton(text + "  ▾", tooltip);
+		button.addActionListener(e -> menu.show(button, 0, button.getHeight()));
+
+		return button;
+	}
+
+	/** One action inside a footer dropdown, styled to match the footer links. */
+	private JMenuItem buildFooterMenuItem(String text, Runnable onClick, String tooltip)
+	{
+		JMenuItem item = new JMenuItem(text);
+		item.setFont(FontManager.getRunescapeSmallFont());
+		item.setToolTipText(tooltip);
+		item.addActionListener(e -> onClick.run());
+
+		return item;
+	}
+
+	/** Shared styling for the footer's link and dropdown buttons. */
+	private JButton styledFooterButton(String text, String tooltip)
+	{
+		JButton button = new JButton(text);
+		button.setFont(FontManager.getRunescapeSmallFont());
+		button.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		button.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		button.setFocusPainted(false);
+		button.setMargin(new Insets(2, 2, 2, 2));
+		button.setToolTipText(tooltip);
+		button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+
+		return button;
+	}
+
+	/**
+	 * Builds the top-right header badge that opens the changelog window;
+	 * {@link #applyChangelogButtonStyle} sets its label and colour.
+	 */
+	private JButton buildChangelogBadge()
+	{
+		JButton badge = new JButton();
+		badge.setFont(FontManager.getRunescapeSmallFont());
+		badge.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		badge.setFocusPainted(false);
+		badge.setBorderPainted(false);
+		badge.setContentAreaFilled(false);
+		badge.setBorder(new EmptyBorder(0, 6, 4, 0));
+		badge.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		badge.setToolTipText("See what's new in this release");
+		badge.setHorizontalTextPosition(SwingConstants.LEFT);
+		badge.setIconTextGap(3);
+		badge.addActionListener(e -> openChangelogWindow());
+		badge.addMouseListener(new MouseAdapter()
 		{
 			@Override
 			public void mouseEntered(MouseEvent e)
 			{
-				paint.accept(active.getAsBoolean() ? ColorScheme.LIGHT_GRAY_COLOR : PricewatchColors.AVG);
+				badge.setForeground(Color.WHITE);
+				badge.setIcon(whatsNew ? sparkleIcon(Color.WHITE) : null);
 			}
 
 			@Override
 			public void mouseExited(MouseEvent e)
 			{
-				rest.run();
+				applyChangelogButtonStyle();
 			}
 		});
+
+		return badge;
 	}
 
-	/** Shows or hides the filter box, clearing any active filter as it closes. */
-	private void toggleFilterField()
+	/** @return the indicator label: highlighted "What's New" for a new release, else "Change log". */
+	private String changelogButtonText()
 	{
-		final boolean show = !filterField.isVisible();
-
-		filterField.setVisible(show);
-
-		if (!show && !filterField.getText().isEmpty())
-			filterField.setText("");
-
-		updateFilterToggle();
-		filterField.revalidate();
-		filterField.repaint();
-
-		if (show)
-			filterField.requestFocusInWindow();
+		return whatsNew ? "What's New" : "Change log";
 	}
 
-	/** Turns the reorganize mode on or off, revealing or hiding each row's drag handle. */
-	private void toggleReorderMode()
-	{
-		reorderMode = !reorderMode;
-		updateReorderToggle();
-		redraw();
-	}
-
-	/** Marks the sort toggle with the active direction, gold once sorting is not manual. */
-	private void updateSortToggle()
-	{
-		final SortMode mode = lastView.getSortMode();
-
-		if (mode == SortMode.MANUAL)
-		{
-			sortToggle.setText("⇅");
-			sortToggle.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-
-			return;
-		}
-
-		sortToggle.setText(mode.descending(lastView.isSortReversed()) ? "↓" : "↑");
-		sortToggle.setForeground(PricewatchColors.AVG);
-	}
-
-	/** Tints the filter funnel gold while the filter box is open. */
-	private void updateFilterToggle()
-	{
-		filterToggle.setIcon(filterIcon(filterField.isVisible()
-				? PricewatchColors.AVG : ColorScheme.LIGHT_GRAY_COLOR));
-	}
-
-	/** Tints the compact toggle gold while compact rows are active. */
-	private void updateCompactToggle()
-	{
-		compactToggle.setForeground(lastView.isCompact()
-				? PricewatchColors.AVG : ColorScheme.LIGHT_GRAY_COLOR);
-	}
-
-	/** Tints the reorganize toggle gold while active, and reveals the categories button with it. */
-	private void updateReorderToggle()
-	{
-		reorderToggle.setForeground(reorderMode
-				? PricewatchColors.AVG : ColorScheme.LIGHT_GRAY_COLOR);
-		categoriesButton.setVisible(reorderMode);
-	}
-
-	/** Paints a small monochrome funnel: a wide top bar tapering to a narrow stem. */
-	private static Icon filterIcon(Color color)
-	{
-		final int size = 14;
-		final BufferedImage img = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
-		final Graphics2D g = img.createGraphics();
-
-		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-		g.setColor(color);
-		g.fillPolygon(
-				new int[]{1, size - 1, size / 2 + 1, size / 2 + 1, size / 2 - 1, size / 2 - 1},
-				new int[]{2, 2, size / 2, size - 1, size - 1, size / 2},
-				6);
-		g.dispose();
-
-		return new ImageIcon(img);
-	}
-
-	/** Paints a bulleted-list glyph: three dots, each followed by a line. */
-	private static Icon categoriesIcon(Color color)
-	{
-		final int size = 14;
-		final BufferedImage img = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
-		final Graphics2D g = img.createGraphics();
-
-		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-		g.setColor(color);
-
-		for (int y : new int[]{1, 6, 11})
-		{
-			g.fillOval(1, y, 3, 3);
-			g.fillRect(6, y, 7, 3);
-		}
-
-		g.dispose();
-
-		return new ImageIcon(img);
-	}
-
-	/**
-	 * @return the footer: the countdown to the next price refresh with the Clear action
-	 *         beside it, over the share menu
-	 */
-	private JPanel buildFooter()
-	{
-		lastRefreshLabel.setForeground(PricewatchColors.MUTED);
-		lastRefreshLabel.setFont(FontManager.getRunescapeSmallFont());
-
-		clearButton.setFont(FontManager.getRunescapeSmallFont());
-		clearButton.setForeground(PricewatchColors.LOW);
-		clearButton.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		clearButton.setFocusPainted(false);
-		clearButton.setToolTipText("Remove every item from the watchlist, including its alerts");
-		clearButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-		clearButton.addActionListener(e -> confirmAndClearAll());
-
-		final JPanel refreshRow = new JPanel(new BorderLayout());
-
-		refreshRow.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		refreshRow.add(lastRefreshLabel, BorderLayout.CENTER);
-		refreshRow.add(clearButton, BorderLayout.EAST);
-
-		shareButton.setText("Share");
-		shareButton.setFont(FontManager.getRunescapeSmallFont());
-		shareButton.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		shareButton.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		shareButton.setFocusPainted(false);
-		shareButton.setToolTipText("Export or import a watchlist share code");
-		shareButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-		shareButton.addActionListener(e -> showShareMenu());
-
-		final JPanel shareRow = new JPanel(new GridLayout(1, 1));
-
-		shareRow.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		shareRow.setBorder(BorderFactory.createCompoundBorder(
-				new EmptyBorder(6, 0, 0, 0),
-				BorderFactory.createCompoundBorder(
-						new MatteBorder(1, 0, 0, 0, PricewatchColors.DIVIDER),
-						new EmptyBorder(6, 0, 0, 0))));
-		shareRow.add(shareButton);
-
-		final JPanel footer = new JPanel(new BorderLayout());
-
-		footer.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		footer.setBorder(BorderFactory.createCompoundBorder(
-				new MatteBorder(1, 0, 0, 0, PricewatchColors.DIVIDER),
-				new EmptyBorder(6, 0, 0, 0)));
-		footer.add(refreshRow, BorderLayout.CENTER);
-		footer.add(shareRow, BorderLayout.SOUTH);
-
-		return footer;
-	}
-
-	/** Updates the footer countdown from the last price refresh and the configured rate. */
-	private void updateRefreshLabel()
-	{
-		final Instant last = lastPriceRefresh;
-
-		if (last == null)
-		{
-			lastRefreshLabel.setText("Prices not yet loaded");
-
-			return;
-		}
-
-		final long rate = Math.max(30, config.priceRefreshSeconds());
-		final long secondsUntil = Math.max(0, rate - ChronoUnit.SECONDS.between(last, Instant.now()));
-
-		lastRefreshLabel.setText("Price refresh in " + secondsUntil + " seconds");
-	}
-
-	/**
-	 * Records when prices were last applied, so the footer can count down to the next refresh.
-	 *
-	 * @param refreshed the moment the latest prices landed
-	 */
-	public void setLastPriceRefresh(Instant refreshed)
-	{
-		this.lastPriceRefresh = refreshed;
-	}
-
-	/** Asks before emptying the watchlist, since the alerts on each item go with it. */
-	private void confirmAndClearAll()
-	{
-		if (lastItems.isEmpty())
-			return;
-
-		final int choice = JOptionPane.showConfirmDialog(this,
-				"Remove all " + lastItems.size() + " watched items, including their alerts?",
-				"Clear watchlist", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
-
-		if (choice == JOptionPane.YES_OPTION)
-			actions.clearWatchlist();
-	}
-
-	/**
-	 * Applies the changelog badge's fixed styling and behaviour;
-	 * {@link #applyChangelogButtonStyle} sets its label and colour.
-	 */
-	private void styleChangelogBadge()
-	{
-		changelogButton.setFont(FontManager.getRunescapeSmallFont());
-		changelogButton.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		changelogButton.setFocusPainted(false);
-		changelogButton.setBorderPainted(false);
-		changelogButton.setContentAreaFilled(false);
-		changelogButton.setBorder(new EmptyBorder(0, 6, 4, 0));
-		changelogButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-		changelogButton.setToolTipText("See what's new in this release");
-		changelogButton.setHorizontalTextPosition(SwingConstants.LEFT);
-		changelogButton.setIconTextGap(3);
-		changelogButton.addActionListener(e -> openChangelogWindow());
-		changelogButton.addMouseListener(new ChangelogBadgeHover());
-	}
-
-	/** Brightens the badge while hovered, restoring its resting style on exit. */
-	private final class ChangelogBadgeHover extends MouseAdapter
-	{
-		@Override
-		public void mouseEntered(MouseEvent e)
-		{
-			changelogButton.setForeground(Color.WHITE);
-			changelogButton.setIcon(whatsNew ? sparkleIcon(Color.WHITE) : null);
-		}
-
-		@Override
-		public void mouseExited(MouseEvent e)
-		{
-			applyChangelogButtonStyle();
-		}
-	}
-
-	/** Applies the badge's resting style — gold and sparkled while announcing, muted once seen. */
+	/** Applies the indicator styling — gold while "What's New", muted once seen. */
 	private void applyChangelogButtonStyle()
 	{
-		changelogButton.setText(whatsNew ? "What's New" : "Change log");
-		changelogButton.setForeground(whatsNew ? PricewatchColors.AVG : ColorScheme.LIGHT_GRAY_COLOR);
-		changelogButton.setIcon(whatsNew ? sparkleIcon(PricewatchColors.AVG) : null);
+		changelogButton.setText(changelogButtonText());
+		changelogButton.setForeground(whatsNew ? COLOR_AVG : ColorScheme.LIGHT_GRAY_COLOR);
+		changelogButton.setIcon(whatsNew ? sparkleIcon(COLOR_AVG) : null);
 	}
 
-	/** Opens the changelog window, or raises it when already open; the first open quiets the badge. */
+	/** Opens the changelog window; the first open of a new release quiets the "What's New" indicator. */
 	private void openChangelogWindow()
 	{
 		if (whatsNew)
 		{
 			whatsNew = false;
-			actions.whatsNewSeen();
+			onWhatsNewSeen.run();
 			applyChangelogButtonStyle();
 		}
 
-		if (changelogWindow != null)
-		{
-			changelogWindow.toFront();
-			return;
-		}
-
-		changelogWindow = new JFrame("What's New");
-		changelogWindow.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
-		changelogWindow.setSize(CHANGELOG_WIDTH, CHANGELOG_HEIGHT);
-		changelogWindow.setLocationRelativeTo(this);
-		changelogWindow.add(buildChangelogContent());
-		changelogWindow.addWindowListener(new ChangelogCloseListener());
-		changelogWindow.setVisible(true);
-	}
-
-	/** Forgets the changelog window once it is closed, so the next open builds a fresh one. */
-	private final class ChangelogCloseListener extends WindowAdapter
-	{
-		@Override
-		public void windowClosed(WindowEvent e)
-		{
-			changelogWindow = null;
-		}
+		showPopout("What's New", buildChangelogContent(), item -> { }, null);
 	}
 
 	/**
-	 * @return the changelog window's contents: a navigation column listing every release,
-	 *         with the selected release's sections beneath it as quick-links, and that
-	 *         release's notes rendered beside it
+	 * Builds the changelog window: a left navigation column listing each release, with the selected
+	 * release's sections expanded beneath it as quick-links that jump to that section, and the
+	 * selected release's notes rendered on the right.
 	 */
 	private JComponent buildChangelogContent()
 	{
-		final List<Changelog.Release> releases = actions.changelog().releases();
-		final JEditorPane body = new JEditorPane();
+		List<Changelog.Release> releases = changelog.releases();
 
+		JEditorPane body = new JEditorPane();
 		body.setContentType("text/html");
 		body.setEditable(false);
 		body.setBackground(ColorScheme.DARKER_GRAY_COLOR);
@@ -758,86 +1498,73 @@ public class PricewatchPanel extends PluginPanel
 				LinkBrowser.browse(e.getURL().toString());
 		});
 
-		final JPanel nav = new JPanel();
-
+		JPanel nav = new JPanel();
 		nav.setLayout(new BoxLayout(nav, BoxLayout.Y_AXIS));
 		nav.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		nav.setBorder(new EmptyBorder(4, 4, 4, 4));
 
 		if (!releases.isEmpty())
 		{
-			body.setText(ChangelogHtml.render(releases.get(0)));
+			body.setText(renderReleaseHtml(releases.get(0)));
 			body.setCaretPosition(0);
 		}
 
 		rebuildChangelogNav(nav, releases, 0, body);
 
-		final JScrollPane navScroll = new JScrollPane(nav);
-
-		navScroll.setPreferredSize(new Dimension(CHANGELOG_NAV_WIDTH, CHANGELOG_HEIGHT));
+		JScrollPane navScroll = new JScrollPane(nav);
+		navScroll.setPreferredSize(new Dimension(168, 560));
 		navScroll.getVerticalScrollBar().setUnitIncrement(16);
 
-		final JScrollPane bodyScroll = new JScrollPane(body);
+		JScrollPane bodyScroll = new JScrollPane(body);
+		bodyScroll.setPreferredSize(new Dimension(440, 560));
 
-		bodyScroll.setPreferredSize(
-				new Dimension(CHANGELOG_WIDTH - CHANGELOG_NAV_WIDTH, CHANGELOG_HEIGHT));
-
-		final JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, navScroll, bodyScroll);
-
-		split.setDividerLocation(CHANGELOG_NAV_WIDTH);
-
+		JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, navScroll, bodyScroll);
+		split.setDividerLocation(168);
 		return split;
 	}
 
 	/**
-	 * (Re)populates the changelog navigation column: one clickable row per release, and
-	 * beneath the selected one its section quick-links, each scrolling the notes to that
-	 * section.
-	 *
-	 * @param nav           the column to fill
-	 * @param releases      every release, newest first
-	 * @param selectedIndex which release's notes are showing
-	 * @param body          the pane the notes are rendered into
+	 * (Re)populates the changelog nav: one clickable row per release (selecting it loads its notes),
+	 * and beneath the selected release its section quick-links, each of which scrolls the notes to
+	 * that section.
 	 */
-	private void rebuildChangelogNav(
-			JPanel nav, List<Changelog.Release> releases, int selectedIndex, JEditorPane body)
+	private void rebuildChangelogNav(JPanel nav, List<Changelog.Release> releases, int selectedIndex, JEditorPane body)
 	{
 		nav.removeAll();
-
 		for (int i = 0; i < releases.size(); i++)
 		{
 			final int index = i;
-			final Changelog.Release release = releases.get(i);
-			final JLabel versionRow = buildChangelogNavVersion(release.getVersion(), index == selectedIndex);
+			Changelog.Release release = releases.get(i);
+			boolean selected = index == selectedIndex;
 
+			JLabel versionRow = buildChangelogNavVersion(release.getVersion(), selected);
 			versionRow.addMouseListener(new MouseAdapter()
 			{
 				@Override
 				public void mouseClicked(MouseEvent e)
 				{
-					body.setText(ChangelogHtml.render(releases.get(index)));
+					body.setText(renderReleaseHtml(releases.get(index)));
 					body.setCaretPosition(0);
 					rebuildChangelogNav(nav, releases, index, body);
 				}
 			});
 			nav.add(versionRow);
 
-			if (index != selectedIndex)
-				continue;
-
-			for (ChangelogHtml.Section section : ChangelogHtml.sections(release.getBody()))
+			if (selected)
 			{
-				final JLabel link = buildChangelogNavLink(section);
-
-				link.addMouseListener(new MouseAdapter()
+				for (ChangelogSection section : extractSections(release.getBody()))
 				{
-					@Override
-					public void mouseClicked(MouseEvent e)
+					JLabel link = buildChangelogNavLink(section);
+					link.addMouseListener(new MouseAdapter()
 					{
-						body.scrollToReference(section.getAnchor());
-					}
-				});
-				nav.add(link);
+						@Override
+						public void mouseClicked(MouseEvent e)
+						{
+							body.scrollToReference(section.getAnchor());
+						}
+					});
+					nav.add(link);
+				}
 			}
 		}
 
@@ -845,11 +1572,10 @@ public class PricewatchPanel extends PluginPanel
 		nav.repaint();
 	}
 
-	/** @return one clickable release row; the selected release is gold, the rest muted. */
+	/** Builds one clickable release row for the changelog nav; the selected release is gold, the rest muted. */
 	private JLabel buildChangelogNavVersion(String version, boolean selected)
 	{
-		final JLabel row = new JLabel(version);
-
+		JLabel row = new JLabel(version);
 		row.setFont(FontManager.getRunescapeBoldFont());
 		row.setOpaque(true);
 		row.setBorder(new EmptyBorder(5, 10, 5, 8));
@@ -857,21 +1583,18 @@ public class PricewatchPanel extends PluginPanel
 		row.setAlignmentX(Component.LEFT_ALIGNMENT);
 		row.setMaximumSize(new Dimension(Integer.MAX_VALUE, row.getPreferredSize().height + 12));
 
-		final Color restFg = selected ? PricewatchColors.AVG : ColorScheme.LIGHT_GRAY_COLOR;
-		final Color restBg = selected ? ColorScheme.DARK_GRAY_COLOR : ColorScheme.DARKER_GRAY_COLOR;
-
+		Color restFg = selected ? COLOR_AVG : ColorScheme.LIGHT_GRAY_COLOR;
+		Color restBg = selected ? ColorScheme.DARK_GRAY_COLOR : ColorScheme.DARKER_GRAY_COLOR;
 		row.setForeground(restFg);
 		row.setBackground(restBg);
 		installChangelogNavHover(row, restFg, restBg);
-
 		return row;
 	}
 
-	/** @return one indented, clickable section quick-link. */
-	private JLabel buildChangelogNavLink(ChangelogHtml.Section section)
+	/** Builds one indented, clickable section quick-link for the changelog nav. */
+	private JLabel buildChangelogNavLink(ChangelogSection section)
 	{
-		final JLabel link = new JLabel(section.getText());
-
+		JLabel link = new JLabel(section.getText());
 		link.setFont(FontManager.getRunescapeSmallFont());
 		link.setOpaque(true);
 		link.setBorder(new EmptyBorder(2, 14 + section.getLevel() * 10, 2, 6));
@@ -881,12 +1604,11 @@ public class PricewatchPanel extends PluginPanel
 		link.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		link.setMaximumSize(new Dimension(Integer.MAX_VALUE, link.getPreferredSize().height + 4));
 		installChangelogNavHover(link, ColorScheme.LIGHT_GRAY_COLOR, ColorScheme.DARKER_GRAY_COLOR);
-
 		return link;
 	}
 
-	/** Adds a hover highlight to a navigation row that restores the given resting colours on exit. */
-	private static void installChangelogNavHover(JLabel label, Color restFg, Color restBg)
+	/** Adds a hover highlight (brighten to white on a lighter row) that restores the given resting colours. */
+	private void installChangelogNavHover(JLabel label, Color restFg, Color restBg)
 	{
 		label.addMouseListener(new MouseAdapter()
 		{
@@ -906,2150 +1628,5218 @@ public class PricewatchPanel extends PluginPanel
 		});
 	}
 
+	/** @return the {@code ##}/{@code ###} section headings of a release body, in order, with scroll anchors. */
+	private static List<ChangelogSection> extractSections(String body)
+	{
+		List<ChangelogSection> sections = new ArrayList<>();
+		int index = 0;
+		for (String raw : body.split("\n", -1))
+		{
+			String line = raw.trim();
+			if (line.startsWith("### "))
+			{
+				sections.add(new ChangelogSection(1, line.substring(4), "sec" + index));
+				index++;
+			}
+			else if (line.startsWith("## "))
+			{
+				sections.add(new ChangelogSection(0, line.substring(3), "sec" + index));
+				index++;
+			}
+		}
+
+		return sections;
+	}
+
+	/** One navigable changelog section: heading depth (0 for {@code ##}, 1 for {@code ###}), text, and anchor. */
+	@Value
+	private static class ChangelogSection
+	{
+		int level;
+
+		String text;
+
+		String anchor;
+	}
+
+	/** Escapes the HTML-significant characters so text renders literally inside an HTML label. */
+	private static String escapeHtml(String text)
+	{
+		return text
+				.replace("&", "&amp;")
+				.replace("<", "&lt;")
+				.replace(">", "&gt;");
+	}
+
+	/** A markdown link {@code [label](url)} used for the changelog's issue references. */
+	private static final Pattern MD_LINK = Pattern.compile("\\[([^\\]]+)\\]\\(([^)]+)\\)");
+
+	/** @return an HTML rendering of one release: its version and date heading, then its markdown body. */
+	private String renderReleaseHtml(Changelog.Release release)
+	{
+		StringBuilder sb = new StringBuilder("<html><body style='font-family:sans-serif; margin:4px 8px;'>");
+		sb.append("<div style='font-size:15px; font-weight:bold;'>");
+		sb.append(escapeHtml(release.getVersion()));
+		if (release.getDate() != null)
+		{
+			sb.append(" <span style='color:gray; font-weight:normal; font-size:10px;'>");
+			sb.append(escapeHtml(release.getDate()));
+			sb.append("</span>");
+		}
+
+		sb.append("</div>");
+		sb.append(renderChangelogBody(release.getBody()));
+		sb.append("</body></html>");
+		return sb.toString();
+	}
+
+	private static final String CL_SECTION_STYLE = "font-size:14px;font-weight:bold;color:#ffffff;margin-top:14px;";
+	private static final String CL_AREA_STYLE = "font-size:13px;font-weight:bold;color:#e0a54a;margin-top:12px;";
+	private static final String CL_FEATURE_STYLE = "font-weight:bold;color:#d4d4d4;margin-top:8px;";
+	private static final String CL_TEXT_STYLE = "color:#9a9a9a;margin-top:2px;";
+
+	/** Pixels of left indent added per nesting level in the changelog body. */
+	private static final int CL_INDENT_STEP = 12;
+
 	/**
-	 * @param color the colour to draw in
-	 * @return a small eight-pointed sparkle, drawn rather than loaded because the panel
-	 *         font renders no such glyph
+	 * Renders a release's markdown body to HTML for the changelog window: {@code ##}/{@code ###}/{@code ####}
+	 * headings become sized/weighted/coloured headers that each indent one level deeper, their content indents
+	 * one level further still, and {@code [#12](url)} issue links become clickable anchors. Deliberately minimal
+	 * — it only covers the constructs the bundled changelog uses, since Swing's HTML renderer is HTML-3.2-era.
 	 */
+	private String renderChangelogBody(String body)
+	{
+		StringBuilder sb = new StringBuilder();
+		int contentLevel = 0;
+		int sectionIndex = 0;
+		for (String raw : body.split("\n", -1))
+		{
+			String line = raw.trim();
+			if (line.isEmpty())
+				continue;
+
+			if (line.startsWith("#### "))
+			{
+				appendChangelogDiv(sb, CL_FEATURE_STYLE, 2, inlineLinks(line.substring(5)));
+				contentLevel = 3;
+			}
+			else if (line.startsWith("### "))
+			{
+				appendChangelogAnchor(sb, sectionIndex);
+				sectionIndex++;
+				appendChangelogDiv(sb, CL_AREA_STYLE, 1, inlineLinks(line.substring(4)));
+				contentLevel = 2;
+			}
+			else if (line.startsWith("## "))
+			{
+				appendChangelogAnchor(sb, sectionIndex);
+				sectionIndex++;
+				appendChangelogDiv(sb, CL_SECTION_STYLE, 0, inlineLinks(line.substring(3)));
+				contentLevel = 1;
+			}
+			else
+			{
+				appendChangelogDiv(sb, CL_TEXT_STYLE, contentLevel, inlineLinks(line));
+			}
+		}
+
+		return sb.toString();
+	}
+
+	/** Appends a named scroll anchor ({@code sec<n>}) matching the ids {@link #extractSections} hands the nav. */
+	private static void appendChangelogAnchor(StringBuilder sb, int sectionIndex)
+	{
+		sb.append("<a name='sec");
+		sb.append(sectionIndex);
+		sb.append("'></a>");
+	}
+
+	/** Appends a {@code <div>} with the given inline CSS {@code style} and left indent, wrapping {@code html}. */
+	private static void appendChangelogDiv(StringBuilder sb, String style, int indentLevel, String html)
+	{
+		sb.append("<div style='");
+		sb.append(style);
+		if (indentLevel > 0)
+		{
+			sb.append("margin-left:");
+			sb.append(indentLevel * CL_INDENT_STEP);
+			sb.append("px;");
+		}
+
+		sb.append("'>");
+		sb.append(html);
+		sb.append("</div>");
+	}
+
+	/** Escapes {@code text}, then turns markdown {@code [label](url)} links into clickable HTML anchors. */
+	private static String inlineLinks(String text)
+	{
+		Matcher matcher = MD_LINK.matcher(escapeHtml(text));
+		StringBuffer sb = new StringBuffer();
+		while (matcher.find())
+		{
+			String anchor = "<a href='" + matcher.group(2) + "'>" + matcher.group(1) + "</a>";
+			matcher.appendReplacement(sb, Matcher.quoteReplacement(anchor));
+		}
+
+		matcher.appendTail(sb);
+		return sb.toString();
+	}
+
+	/** Copies the shareable tracked-list code to the clipboard once the plugin has built it. */
+	private void exportTrackedList()
+	{
+		onExportList.accept(token ->
+		{
+			if (token == null || token.isEmpty())
+			{
+				JOptionPane.showMessageDialog(this, "Nothing tracked to export.", "Export List",
+						JOptionPane.INFORMATION_MESSAGE);
+				return;
+			}
+
+			copyToClipboard(token);
+			JOptionPane.showMessageDialog(this, "Tracked-list code copied to the clipboard.", "Export List",
+					JOptionPane.INFORMATION_MESSAGE);
+		});
+	}
+
+	/** Prompts for a tracked-list code, merges it into the current profile, and reports the outcome. */
+	private void importTrackedList()
+	{
+		JTextArea input = new JTextArea(5, 24);
+		input.setLineWrap(true);
+		JScrollPane scroll = new JScrollPane(input);
+
+		int choice = JOptionPane.showConfirmDialog(this, scroll, "Paste tracked-list code",
+				JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+		if (choice != JOptionPane.OK_OPTION)
+			return;
+
+		onImportList.accept(input.getText(), result ->
+				JOptionPane.showMessageDialog(this, result, "Import List", JOptionPane.INFORMATION_MESSAGE));
+	}
+
+	/** Copies the acquisitions log as CSV to the clipboard once the plugin has built it. */
+	private void exportAcquisitionsCsv()
+	{
+		onExportCsv.accept(csv ->
+		{
+			copyToClipboard(csv);
+			JOptionPane.showMessageDialog(this, "Acquisitions CSV copied to the clipboard.", "Export CSV",
+					JOptionPane.INFORMATION_MESSAGE);
+		});
+	}
+
+	private void copyToClipboard(String text)
+	{
+		Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
+		clipboard.setContents(new StringSelection(text), null);
+	}
+
+	/** Opens a pop-out with the portfolio value history chart, fed live from the plugin's stored points. */
+	private void openPortfolioChart()
+	{
+		PortfolioChartPanel chart = new PortfolioChartPanel();
+		Runnable refresh = () -> chart.setData(onPortfolioHistory.get());
+		refresh.run();
+		portfolioPopoutRefreshers.add(refresh);
+		showPopout("Portfolio Value", chart, item -> refresh.run(),
+				() -> portfolioPopoutRefreshers.remove(refresh));
+	}
+
+	/** Shows the chart pop-out button (and its balancing strut) only once at least two history points exist to plot. */
+	private void updatePortfolioChartButton()
+	{
+		boolean enough = onPortfolioHistory != null && onPortfolioHistory.get().size() >= 2;
+		if (portfolioChartButton.isVisible() == enough)
+			return;
+
+		portfolioChartButton.setVisible(enough);
+		portfolioChartStrut.setVisible(enough);
+		totalsTitleRow.revalidate();
+		totalsTitleRow.repaint();
+	}
+
+	/** Feature-template "Related area" dropdown options, matched exactly for URL prefill. */
+	private static final String[] FEATURE_AREAS = {
+			"Item tracking (adding / auto-add / consolidation / collection log)",
+			"Live pricing (GE / wiki realtime / time-window values)",
+			"Profit tracking (cost basis / acquisitions / portfolio total)",
+			"Detail view & charts (graphs, timeframes, pop-out windows)",
+			"Notifications / price alerts",
+			"Panel / overlays (ground or inventory highlights)",
+			"Configuration / settings",
+			"New / other"
+	};
+
+	/** Opens the in-plugin "Report a bug" form. */
+	private void openReportIssueForm()
+	{
+		openIssueForm("Report a Bug", BUG_TEMPLATE, "[Bug]: ", Arrays.asList(
+				new IssueField("description", "Describe the bug", 4),
+				new IssueField("repro", "Steps to reproduce", 3),
+				new IssueField("expected", "Expected behavior", 2),
+				new IssueField("actual", "Actual behavior", 2)));
+	}
+
+	/** Opens the in-plugin "Request a feature" form. */
+	private void openRequestFeatureForm()
+	{
+		openIssueForm("Request a Feature", FEATURE_TEMPLATE, "[Feature]: ", Arrays.asList(
+				new IssueField("problem", "Problem or motivation", 3),
+				new IssueField("solution", "Proposed solution", 4),
+				new IssueField("area", "Related area", FEATURE_AREAS),
+				new IssueField("alternatives", "Alternatives considered", 3),
+				new IssueField("context", "Additional context", 3)));
+	}
+
+	/**
+	 * Shows a modal form for an issue template, then opens the GitHub issue form in the browser
+	 * with the entered title/fields pre-filled (via query params) so the user only has to review
+	 * and click Submit on GitHub. No data leaves the machine until they submit on GitHub.
+	 */
+	private void openIssueForm(String dialogTitle, String template, String titlePrefix, List<IssueField> fields)
+	{
+		JDialog dialog = new JDialog(SwingUtilities.getWindowAncestor(this), dialogTitle);
+		dialog.setModal(true);
+
+		JPanel form = new JPanel();
+		form.setLayout(new BoxLayout(form, BoxLayout.Y_AXIS));
+		form.setBorder(new EmptyBorder(8, 8, 8, 8));
+
+		JTextField titleField = new JTextField();
+		addFormRow(form, "Title", titleField);
+
+		Map<IssueField, JComponent> inputs = new LinkedHashMap<>();
+		for (IssueField field : fields)
+		{
+			if (field.options != null)
+			{
+				JComboBox<String> combo = new JComboBox<>(field.options);
+				combo.insertItemAt("", 0);
+				combo.setSelectedIndex(0);
+				combo.setMaximumSize(new Dimension(Integer.MAX_VALUE, combo.getPreferredSize().height));
+				inputs.put(field, combo);
+				addFormRow(form, field.label, combo);
+			}
+			else
+			{
+				JTextArea area = new JTextArea(field.rows, 28);
+				area.setLineWrap(true);
+				area.setWrapStyleWord(true);
+				inputs.put(field, area);
+				addFormRow(form, field.label, new JScrollPane(area));
+			}
+		}
+
+		JButton submit = new JButton("Open on GitHub");
+		submit.addActionListener(e ->
+		{
+			LinkBrowser.browse(buildIssueUrl(template, titlePrefix, titleField.getText(), fields, inputs));
+			dialog.dispose();
+		});
+
+		JButton cancel = new JButton("Cancel");
+		cancel.addActionListener(e -> dialog.dispose());
+
+		JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 4));
+		buttons.add(cancel);
+		buttons.add(submit);
+
+		JPanel content = new JPanel(new BorderLayout());
+		content.add(new JScrollPane(form), BorderLayout.CENTER);
+		content.add(buttons, BorderLayout.SOUTH);
+
+		dialog.setContentPane(content);
+		dialog.pack();
+		dialog.setLocationRelativeTo(this);
+		dialog.setVisible(true);
+	}
+
+	/** Adds a labelled row (label above the field) to a vertical form panel. */
+	private void addFormRow(JPanel form, String label, JComponent field)
+	{
+		JLabel labelComponent = new JLabel(label);
+		labelComponent.setAlignmentX(Component.LEFT_ALIGNMENT);
+		field.setAlignmentX(Component.LEFT_ALIGNMENT);
+		form.add(labelComponent);
+		form.add(field);
+		form.add(Box.createVerticalStrut(6));
+	}
+
+	/** Builds the GitHub new-issue URL with the title and non-empty fields pre-filled as query params. */
+	private static String buildIssueUrl(String template, String titlePrefix, String title,
+			List<IssueField> fields, Map<IssueField, JComponent> inputs)
+	{
+		StringBuilder url = new StringBuilder(GITHUB_NEW_ISSUE).append("?template=").append(template);
+
+		String trimmedTitle = title == null ? "" : title.trim();
+		if (!trimmedTitle.isEmpty())
+			url.append("&title=").append(encode(titlePrefix + trimmedTitle));
+
+		for (IssueField field : fields)
+		{
+			String value = fieldValue(inputs.get(field)).trim();
+			if (!value.isEmpty())
+				url.append('&')
+						.append(field.id)
+						.append('=')
+						.append(encode(value));
+		}
+
+		return url.toString();
+	}
+
+	/** @return the current text of an issue-form input (text area or dropdown selection). */
+	private static String fieldValue(JComponent input)
+	{
+		if (input instanceof JTextArea)
+			return ((JTextArea) input).getText();
+
+		if (input instanceof JComboBox)
+		{
+			Object selected = ((JComboBox<?>) input).getSelectedItem();
+			return selected == null ? "" : selected.toString();
+		}
+
+		return "";
+	}
+
+	/** URL-encodes a value for a query parameter (spaces as %20, not +). */
+	private static String encode(String value)
+	{
+		return URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20");
+	}
+
+	/** Fixes the three totals value labels to the widest one's width so the columns stay aligned. */
+	private void equalizeTotalsLabelWidths()
+	{
+		JLabel[] labels = {totalHighLabel, totalLowLabel, totalAvgLabel};
+		int maxW = 0;
+		for (JLabel l : labels)
+		{
+			l.setPreferredSize(null);
+			maxW = Math.max(maxW, l.getPreferredSize().width);
+		}
+
+		for (JLabel l : labels)
+		{
+			Dimension d = l.getPreferredSize();
+			Dimension fixed = new Dimension(maxW, d.height);
+			l.setPreferredSize(fixed);
+			l.setMinimumSize(fixed);
+			l.setMaximumSize(fixed);
+		}
+	}
+
+	/** Builds one estimate row pairing a totals value label with its pulse-indicator label. */
+	private JPanel buildTotalsRow(JLabel valueLabel, JLabel pulseLabel)
+	{
+		JPanel row = new JPanel();
+		row.setLayout(new BoxLayout(row, BoxLayout.X_AXIS));
+		row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		row.setBorder(ESTIMATE_ROW_BORDER_DEFAULT);
+		row.add(valueLabel);
+		row.add(Box.createHorizontalStrut(6));
+		row.add(pulseLabel);
+		row.add(Box.createHorizontalGlue());
+		return row;
+	}
+
+	/** Creates a fixed-size label that hosts the ▲/▼ price-change pulse next to a value. */
+	private JLabel createDeltaLabel()
+	{
+		JLabel label = new JLabel();
+		label.setFont(FontManager.getRunescapeSmallFont());
+		label.setPreferredSize(DELTA_LABEL_SIZE);
+		label.setMinimumSize(DELTA_LABEL_SIZE);
+		label.setMaximumSize(DELTA_LABEL_SIZE);
+		label.setHorizontalAlignment(SwingConstants.CENTER);
+		return label;
+	}
+
+	/** Starts a price pulse on the label unless the configured indicator mode suppresses it. */
+	private void pulseIfShown(JLabel label, int delta, PriceIndicatorMode mode)
+	{
+		if (mode == PriceIndicatorMode.OFF || (mode == PriceIndicatorMode.CHANGE && delta == 0))
+			return;
+
+		startPulse(label, delta);
+	}
+
+	/** Begins a color pulse on a label (green up / red down) reflecting the sign of a price change. */
+	private void startPulse(JLabel label, int delta)
+	{
+		label.setText(delta > 0 ? "▲" : delta < 0 ? "▼" : "–");
+		Color base = delta > 0 ? COLOR_HIGH : delta < 0 ? COLOR_LOW : LOADING_COLOR;
+		label.setForeground(new Color(base.getRed(), base.getGreen(), base.getBlue(), 0));
+		pulseEntries.add(new PulseEntry(label, base, System.currentTimeMillis()));
+	}
+
+	/** Timer tick that advances every active pulse's color toward its base, retiring finished ones. */
+	private void updatePulses()
+	{
+		if (pulseEntries.isEmpty())
+			return;
+
+		long now = System.currentTimeMillis();
+		Iterator<PulseEntry> it = pulseEntries.iterator();
+		while (it.hasNext())
+		{
+			PulseEntry p = it.next();
+			long elapsed = now - p.start;
+			if (elapsed >= PULSE_DURATION_MS)
+			{
+				p.label.setText("");
+				it.remove();
+				continue;
+			}
+
+			float alpha = (float) Math.sin(Math.PI * elapsed / PULSE_DURATION_MS);
+			p.label.setForeground(new Color(
+					p.base.getRed(), p.base.getGreen(), p.base.getBlue(),
+					Math.round(alpha * 255)));
+		}
+	}
+
+	/** Timer tick that breathes the shared glow colour across every label still awaiting prices. */
+	private void updateLoadingGlow()
+	{
+		if (loadingLabels.isEmpty())
+			return;
+
+		double phase = (System.currentTimeMillis() % LOADING_GLOW_PERIOD_MS) / (double) LOADING_GLOW_PERIOD_MS;
+		double wave = (Math.sin(phase * 2 * Math.PI) + 1) / 2;
+		float alpha = LOADING_GLOW_MIN_ALPHA + (1f - LOADING_GLOW_MIN_ALPHA) * (float) wave;
+		Color glow = new Color(
+				LOADING_COLOR.getRed(), LOADING_COLOR.getGreen(), LOADING_COLOR.getBlue(),
+				Math.round(alpha * 255));
+
+		for (JLabel label : loadingLabels)
+			label.setForeground(glow);
+	}
+
+	/** Updates the footer's "updated N ago" text from the last price-refresh timestamp. */
+	private void updateRefreshLabel()
+	{
+		if (lastPriceRefresh == null)
+		{
+			lastRefreshLabel.setText("Prices not yet loaded");
+		}
+		else
+		{
+			long secondsAgo = ChronoUnit.SECONDS.between(lastPriceRefresh, Instant.now());
+			long rate = Math.max(30, config.priceRefreshSeconds());
+			long secondsUntil = Math.max(0, rate - secondsAgo);
+			lastRefreshLabel.setText("Price refresh in " + secondsUntil + " seconds");
+		}
+	}
+
+	/** Filters the add-item search dropdown to items matching the typed query. */
+	private void onSearch(String query)
+	{
+		if (query == null || query.trim().length() < 2)
+		{
+			searchResultsPanel.setVisible(false);
+			return;
+		}
+
+		List<ItemPrice> results = itemManager.search(query);
+		searchResultsPanel.removeAll();
+
+		int shown = 0;
+		for (ItemPrice item : results)
+		{
+			if (shown >= 5)
+				break;
+
+			if (trackedItemIds.contains(item.getId()))
+				continue;
+
+			JPanel row = buildSearchResultRow(item.getId(), item.getName());
+			searchResultsPanel.add(row);
+			searchResultsPanel.add(Box.createVerticalStrut(2));
+			shown++;
+		}
+
+		searchResultsPanel.setVisible(shown > 0);
+		searchResultsPanel.revalidate();
+		searchResultsPanel.repaint();
+	}
+
+	/** Builds one clickable row in the search-results dropdown that adds the item when clicked. */
+	private JPanel buildSearchResultRow(int itemId, String itemName)
+	{
+		JPanel row = new JPanel(new BorderLayout());
+		row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		row.setBorder(new EmptyBorder(4, 6, 4, 6));
+		row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 36));
+
+		JLabel nameLabel = new JLabel();
+		nameLabel.setForeground(Color.WHITE);
+		nameLabel.setFont(FontManager.getRunescapeSmallFont());
+		EllipsisText.set(nameLabel, itemName);
+
+		JButton viewBtn = new JButton(buildEyeIcon(14));
+		viewBtn.setPreferredSize(new Dimension(28, 22));
+		viewBtn.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		viewBtn.setForeground(Color.WHITE);
+		viewBtn.setFocusPainted(false);
+		viewBtn.setBorderPainted(true);
+		viewBtn.setBorder(BorderFactory.createLineBorder(ColorScheme.LIGHT_GRAY_COLOR));
+		viewBtn.setToolTipText("View prices only");
+		viewBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		viewBtn.addActionListener(e ->
+		{
+			onAddItem.accept(itemId, TrackItemMode.VIEW);
+			searchField.setText("");
+			searchResultsPanel.setVisible(false);
+		});
+
+		Color addGreen = new Color(0, 153, 0);
+		JButton addBtn = new JButton("+");
+		addBtn.setPreferredSize(new Dimension(28, 22));
+		addBtn.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		addBtn.setForeground(addGreen);
+		addBtn.setFocusPainted(false);
+		addBtn.setBorderPainted(true);
+		addBtn.setBorder(BorderFactory.createLineBorder(addGreen));
+		addBtn.setToolTipText("Track item");
+		addBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		addBtn.addActionListener(e ->
+		{
+			onAddItem.accept(itemId, TrackItemMode.TRACK);
+			searchField.setText("");
+			searchResultsPanel.setVisible(false);
+		});
+
+		JPanel buttonRow = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
+		buttonRow.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		buttonRow.add(viewBtn);
+		buttonRow.add(addBtn);
+
+		row.add(nameLabel, BorderLayout.CENTER);
+		row.add(buttonRow, BorderLayout.EAST);
+
+		row.addMouseListener(new MouseAdapter()
+		{
+			@Override
+			public void mouseEntered(MouseEvent e)
+			{
+				row.setBackground(ColorScheme.DARK_GRAY_HOVER_COLOR);
+			}
+
+			@Override
+			public void mouseExited(MouseEvent e)
+			{
+				row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+			}
+		});
+		row.setCursor(Cursor.getDefaultCursor());
+
+		return row;
+	}
+
+	/**
+	 * Rebuilds the main item list from the latest tracked items and totals.
+	 *
+	 * <p>This is the primary entry point the plugin calls after any data change:
+	 * it repopulates the rows, updates the value/profit totals and the refresh
+	 * timestamp, and (when {@code indicatorMode} permits) starts pulse animations
+	 * for items whose price moved.
+	 */
+	public void rebuild(List<TrackedItem> rawItems, Instant newLastPriceRefresh,
+			PriceIndicatorMode indicatorMode, boolean loggedIn,
+			List<CategoryState> categories, boolean favoritesCollapsed, boolean uncategorizedCollapsed)
+	{
+		this.lastPriceRefresh = newLastPriceRefresh;
+		this.categories = categories != null ? categories : new ArrayList<>();
+		this.favoritesCollapsed = favoritesCollapsed;
+		this.uncategorizedCollapsed = uncategorizedCollapsed;
+		SortMode sortMode = config.sortMode();
+		final List<TrackedItem> items;
+		if (sortMode != SortMode.MANUAL)
+		{
+			items = new ArrayList<>(rawItems);
+			items.sort(sortMode.comparator(config.sortReversed()));
+		}
+		else
+		{
+			items = rawItems;
+		}
+
+		updateSortToggle();
+		if (sortMode != SortMode.MANUAL && reorderMode)
+			toggleReorderMode();
+
+		reorderToggle.setVisible(sortMode == SortMode.MANUAL);
+
+		trackedItemIds.clear();
+		currentItems.clear();
+		orderedItemIds.clear();
+		for (TrackedItem item : items)
+		{
+			trackedItemIds.add(item.getItemId());
+			currentItems.put(item.getItemId(), item);
+			orderedItemIds.add(item.getItemId());
+		}
+
+		rowIconCache.keySet().removeIf(key -> !trackedItemIds.contains((int) (key >> 32)));
+
+		if (!loggedIn)
+		{
+			SwingUtilities.invokeLater(() ->
+			{
+				detailItemId = -1;
+				closePopouts();
+				footerPanel.setVisible(false);
+				cardLayout.show(cardsHost, CARD_LOGGED_OUT);
+			});
+			return;
+		}
+
+		if (detailItemId > 0)
+		{
+			TrackedItem detail = currentItems.get(detailItemId);
+			if (detail == null && previewItem != null && previewItem.getItemId() == detailItemId)
+				detail = previewItem;
+
+			if (detail != null)
+			{
+				final TrackedItem shown = detail;
+				SwingUtilities.invokeLater(() ->
+						preserveDetailScroll(() ->
+						{
+							populateDetail(shown);
+							applyDetailCard();
+						}));
+			}
+			else if (!currentItems.isEmpty())
+			{
+				SwingUtilities.invokeLater(this::showMain);
+			}
+		}
+		else
+		{
+			SwingUtilities.invokeLater(() ->
+			{
+				footerPanel.setVisible(true);
+				cardLayout.show(cardsHost, CARD_MAIN);
+			});
+		}
+
+		SwingUtilities.invokeLater(() ->
+		{
+			loadingLabels.clear();
+			pulseEntries.clear();
+			clearButton.setEnabled(!trackedItemIds.isEmpty());
+			updateCompactToggle();
+			totalHighDeltaLabel.setText("");
+			totalLowDeltaLabel.setText("");
+			totalAvgDeltaLabel.setText("");
+
+			long totalHigh = 0, totalLow = 0, totalAvg = 0;
+			long totalCostBasis = 0;
+			long totalRealized = 0;
+			long totalSuspendedValue = 0;
+			boolean anyProfitData = false;
+			long prevPriceTotalHigh = 0, prevPriceTotalLow = 0, prevPriceTotalAvg = 0;
+			boolean anyDeltas = false;
+			ValueFormat totalFmt = config.geEstimatesFormat();
+			boolean showEstHigh = config.showEstHigh();
+			boolean showEstLow = config.showEstLow();
+			boolean showEstAvg = config.showEstAvg();
+			boolean showEstProfit = config.showEstProfit();
+
+			for (TrackedItem item : items)
+			{
+				totalHigh += item.getHighValue();
+				totalLow  += item.getLowValue();
+				totalAvg  += item.getAvgValue();
+				totalSuspendedValue += item.getSuspendedValue();
+				long realized = item.getRealizedProfit();
+				totalRealized += realized;
+				if (item.isCostBasisInitialized())
+				{
+					totalCostBasis += item.getCostBasis();
+					anyProfitData = true;
+				}
+
+				if (realized != 0)
+					anyProfitData = true;
+
+				if (item.isHasDeltas())
+				{
+					anyDeltas = true;
+					prevPriceTotalHigh += (long) item.getQuantity() * item.getPrevHighPrice();
+					prevPriceTotalLow  += (long) item.getQuantity() * item.getPrevLowPrice();
+					prevPriceTotalAvg  += (long) item.getQuantity() * item.getPrevAvgPrice();
+				}
+				else
+				{
+					prevPriceTotalHigh += item.getHighValue();
+					prevPriceTotalLow  += item.getLowValue();
+					prevPriceTotalAvg  += item.getAvgValue();
+				}
+			}
+
+			renderTrackedRows(items, indicatorMode);
+
+			boolean hasPrices = items.stream().anyMatch(TrackedItem::hasPrices);
+
+			lastRenderedItems = items;
+			updateSessionLine(items, hasPrices);
+
+			totalHighRow.setVisible(showEstHigh);
+			totalLowRow.setVisible(showEstLow);
+			totalAvgRow.setVisible(showEstAvg);
+
+			totalHighLabel.setText("High:  " + (hasPrices ? formatTotalGp(totalHigh, totalFmt) : "—"));
+			totalLowLabel.setText( "Low:   " + (hasPrices ? formatTotalGp(totalLow,  totalFmt) : "—"));
+			totalAvgLabel.setText( "Avg:   " + (hasPrices ? formatTotalGp(totalAvg, totalFmt) : "—"));
+			if (hasPrices)
+			{
+				applyTotalTooltip(totalHighLabel, totalHigh, totalFmt);
+				applyTotalTooltip(totalLowLabel,  totalLow,  totalFmt);
+				applyTotalTooltip(totalAvgLabel,  totalAvg,  totalFmt);
+			}
+			else
+			{
+				totalHighLabel.setToolTipText(null);
+				totalLowLabel.setToolTipText(null);
+				totalAvgLabel.setToolTipText(null);
+			}
+
+			equalizeTotalsLabelWidths();
+			bottomPanel.setVisible(config.showGeEstimates() && !reorderMode);
+			updatePortfolioChartButton();
+			portfolioPopoutRefreshers.forEach(Runnable::run);
+			applyEstimatesPosition(config.geEstimatesPosition());
+			applyEstimatesSpacing(config.geEstimatesSpacing());
+
+			updateCoinsIcon(hasPrices ? totalAvg : 0);
+
+			if (indicatorMode != PriceIndicatorMode.OFF && hasPrices && anyDeltas)
+			{
+				pulseIfShown(totalHighDeltaLabel, Long.compare(totalHigh, prevPriceTotalHigh), indicatorMode);
+				pulseIfShown(totalLowDeltaLabel,  Long.compare(totalLow,  prevPriceTotalLow),  indicatorMode);
+				pulseIfShown(totalAvgDeltaLabel,  Long.compare(totalAvg,  prevPriceTotalAvg),  indicatorMode);
+			}
+
+			long totalProfit = (totalAvg + totalSuspendedValue - totalCostBasis) + totalRealized;
+			if (anyProfitData && hasPrices && showEstProfit)
+			{
+				String sign = totalProfit > 0 ? "+" : "";
+				profitLabel.setText(sign + formatTotalGp(totalProfit, totalFmt));
+				applyTotalTooltip(profitLabel, totalProfit, totalFmt);
+				profitLabel.setForeground(totalProfit == 0
+						? ColorScheme.LIGHT_GRAY_COLOR
+						: (totalProfit > 0 ? COLOR_HIGH : COLOR_LOW));
+				profitSection.setVisible(true);
+			}
+			else
+			{
+				profitSection.setVisible(false);
+			}
+
+			boolean compact = config.compactView();
+			totalsRows.setVisible(!compact);
+			compactTotalsRows.setVisible(compact);
+			if (compact)
+				updateCompactTotals(items.size(), totalAvg, totalProfit, hasPrices,
+						anyProfitData && showEstProfit, totalFmt);
+
+			trackedItemsPanel.revalidate();
+			trackedItemsPanel.repaint();
+		});
+	}
+
+	/**
+	 * Clears and re-renders the tracked-item rows (empty placeholder, or the grouped rows),
+	 * retaining the inputs so {@link #toggleReorderMode()} can re-render the manage layout
+	 * without a full plugin refresh.
+	 */
+	private void renderTrackedRows(List<TrackedItem> items, PriceIndicatorMode indicatorMode)
+	{
+		lastRenderItems = items;
+		lastRenderIndicatorMode = indicatorMode;
+
+		trackedItemsPanel.removeAll();
+
+		if (items.isEmpty())
+		{
+			PluginErrorPanel errorPanel = new PluginErrorPanel();
+			errorPanel.setContent("No items tracked", "Search above to add an item to track.");
+
+			JPanel emptyWrapper = new JPanel(new BorderLayout());
+			emptyWrapper.setBackground(ColorScheme.DARK_GRAY_COLOR);
+			emptyWrapper.add(errorPanel, BorderLayout.CENTER);
+			trackedItemsPanel.add(emptyWrapper);
+		}
+		else
+		{
+			renderGroupedRows(items, indicatorMode);
+		}
+
+		trackedItemsPanel.revalidate();
+		trackedItemsPanel.repaint();
+	}
+
+	/**
+	 * Renders the tracked rows into {@link #trackedItemsPanel}, grouped into the Favorites
+	 * pseudo-group (pinned on top), then each user category in order, then Uncategorized.
+	 * Falls back to a flat, header-less list when no favorites and no categories exist, so
+	 * users who don't use grouping see the list exactly as before. Empty groups are skipped.
+	 */
+	private void renderGroupedRows(List<TrackedItem> items, PriceIndicatorMode indicatorMode)
+	{
+		boolean hasFavorites = items.stream().anyMatch(TrackedItem::isFavorite);
+		groupingActive = hasFavorites || !categories.isEmpty();
+
+		if (!groupingActive)
+		{
+			List<TrackedItem> visible = new ArrayList<>();
+			for (TrackedItem item : items)
+				if (matchesFilter(item))
+					visible.add(item);
+
+			for (TrackedItem item : visible)
+				addItemRow(item, indicatorMode, visible);
+
+			return;
+		}
+
+		Set<String> categoryNames = new HashSet<>();
+		for (CategoryState cat : categories)
+			categoryNames.add(cat.getName());
+
+		List<TrackedItem> favorites = new ArrayList<>();
+		for (TrackedItem item : items)
+			if (item.isFavorite() && matchesFilter(item))
+				favorites.add(item);
+
+		renderGroup("★ Favorites", CategoryState.FAVORITES_KEY, favoritesCollapsed, favorites, indicatorMode);
+
+		for (CategoryState cat : categories)
+		{
+			List<TrackedItem> inCategory = new ArrayList<>();
+			for (TrackedItem item : items)
+				if (!item.isFavorite() && cat.getName().equals(item.getCategory()) && matchesFilter(item))
+					inCategory.add(item);
+
+			renderGroup(cat.getName(), cat.getName(), cat.isCollapsed(), inCategory, indicatorMode);
+		}
+
+		List<TrackedItem> uncategorized = new ArrayList<>();
+		for (TrackedItem item : items)
+		{
+			String cat = item.getCategory();
+			boolean uncat = cat == null || cat.isEmpty() || !categoryNames.contains(cat);
+			if (!item.isFavorite() && uncat && matchesFilter(item))
+				uncategorized.add(item);
+		}
+
+		renderGroup("Uncategorized", CategoryState.UNCATEGORIZED_KEY, uncategorizedCollapsed,
+				uncategorized, indicatorMode);
+	}
+
+	/** @return whether the item matches the active tracked-list name filter (always true when the filter is empty). */
+	private boolean matchesFilter(TrackedItem item)
+	{
+		return trackedFilter.isEmpty() || item.getName().toLowerCase().contains(trackedFilter);
+	}
+
+	/** Re-renders the rows against the updated tracked-list filter text. */
+	private void onTrackedFilterChanged()
+	{
+		String text = trackedFilterField.getText();
+		trackedFilter = text == null ? "" : text.trim().toLowerCase();
+		renderTrackedRows(lastRenderItems, lastRenderIndicatorMode);
+	}
+
+	/** Toggles the tracked-list filter field via the header filter button, focusing it when shown. */
+	private void toggleTrackedFilter()
+	{
+		boolean show = !trackedFilterField.isVisible();
+		setTrackedFilterVisible(show);
+		updateFilterToggle();
+
+		if (show)
+			trackedFilterField.requestFocusInWindow();
+	}
+
+	/** Sets the filter field's visibility, clearing any active filter when it is hidden. */
+	private void setTrackedFilterVisible(boolean visible)
+	{
+		if (visible == trackedFilterField.isVisible())
+			return;
+
+		trackedFilterField.setVisible(visible);
+
+		if (!visible && !trackedFilter.isEmpty())
+		{
+			trackedFilter = "";
+			trackedFilterField.setText("");
+			renderTrackedRows(lastRenderItems, lastRenderIndicatorMode);
+		}
+
+		trackedFilterField.revalidate();
+		trackedFilterField.repaint();
+	}
+
+	/** Updates the header filter button's funnel icon, tinting it gold while the filter field is shown. */
+	private void updateFilterToggle()
+	{
+		if (filterToggle != null)
+			filterToggle.setIcon(filterIcon(trackedFilterField != null && trackedFilterField.isVisible()
+					? COLOR_AVG : ColorScheme.LIGHT_GRAY_COLOR));
+	}
+
+	/**
+	 * Paints a small monochrome funnel (filter) icon in the given colour: a wide top bar
+	 * tapering to a narrow central stem.
+	 */
+	private static Icon filterIcon(Color color)
+	{
+		int size = 14;
+		BufferedImage img = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
+		Graphics2D g = img.createGraphics();
+		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+		g.setColor(color);
+
+		g.fillPolygon(
+				new int[]{1, size - 1, size / 2 + 1, size / 2 + 1, size / 2 - 1, size / 2 - 1},
+				new int[]{2, 2, size / 2, size - 1, size - 1, size / 2},
+				6);
+
+		g.dispose();
+		return new ImageIcon(img);
+	}
+
+	/** Draws a bulleted-list glyph — three dots, each followed by a line — tinted {@code color}. */
+	private static Icon categoriesIcon(Color color)
+	{
+		int size = 14;
+		BufferedImage img = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
+		Graphics2D g = img.createGraphics();
+		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+		g.setColor(color);
+
+		for (int y : new int[]{1, 6, 11})
+		{
+			g.fillOval(1, y, 3, 3);
+			g.fillRect(6, y, 7, 3);
+		}
+
+		g.dispose();
+		return new ImageIcon(img);
+	}
+
+	/**
+	 * Installs grey↔gold hover colouring on a header toggle: an unselected (grey) button
+	 * turns gold while hovered, a selected (gold) button turns grey, and its resting
+	 * state colour is repainted on exit.
+	 *
+	 * @param selected whether the button is currently in its selected/gold state
+	 * @param apply    paints the button in a colour ({@code setForeground} for glyph
+	 *                     buttons, {@code setIcon} for icon buttons)
+	 * @param restore  repaints the button's resting state colour
+	 */
+	private static void installToggleHover(JLabel button, BooleanSupplier selected,
+			Consumer<Color> apply, Runnable restore)
+	{
+		button.addMouseListener(new MouseAdapter()
+		{
+			@Override
+			public void mouseEntered(MouseEvent e)
+			{
+				apply.accept(selected.getAsBoolean() ? ColorScheme.LIGHT_GRAY_COLOR : COLOR_AVG);
+			}
+
+			@Override
+			public void mouseExited(MouseEvent e)
+			{
+				restore.run();
+			}
+		});
+	}
+
+	/** Paints a small monochrome monitor (on-screen overlay) icon in the given colour. */
+	private static Icon overlayIcon(Color color)
+	{
+		int size = 16;
+		BufferedImage img = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
+		Graphics2D g = img.createGraphics();
+		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+		g.setColor(color);
+
+		g.drawRect(2, 2, size - 5, size - 8);
+		g.fillRect(size / 2 - 2, size - 5, 4, 2);
+		g.fillRect(size / 2 - 4, size - 3, 8, 1);
+
+		g.dispose();
+		return new ImageIcon(img);
+	}
+
+	/** Paints a small firework burst (eight rays capped with sparks) for the "What's New" badge. */
 	private static Icon sparkleIcon(Color color)
 	{
-		final int size = 14;
-		final BufferedImage image = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
-		final Graphics2D g = image.createGraphics();
-
+		int size = 14;
+		BufferedImage img = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
+		Graphics2D g = img.createGraphics();
 		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 		g.setColor(color);
 		g.setStroke(new BasicStroke(1.3f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
 
-		final double centre = size / 2.0;
-		final double inner = 1.6;
-		final double outer = centre - 1.0;
-
+		double centre = size / 2.0;
+		double inner = 1.6;
+		double outer = centre - 1.0;
 		for (int i = 0; i < 8; i++)
 		{
-			final double angle = Math.PI * i / 4.0;
-			final double length = i % 2 == 0 ? outer : outer - 2.2;
-			final int x1 = (int) Math.round(centre + Math.cos(angle) * inner);
-			final int y1 = (int) Math.round(centre + Math.sin(angle) * inner);
-			final int x2 = (int) Math.round(centre + Math.cos(angle) * length);
-			final int y2 = (int) Math.round(centre + Math.sin(angle) * length);
-
+			double angle = Math.PI * i / 4.0;
+			double length = i % 2 == 0 ? outer : outer - 2.2;
+			int x1 = (int) Math.round(centre + Math.cos(angle) * inner);
+			int y1 = (int) Math.round(centre + Math.sin(angle) * inner);
+			int x2 = (int) Math.round(centre + Math.cos(angle) * length);
+			int y2 = (int) Math.round(centre + Math.sin(angle) * length);
 			g.drawLine(x1, y1, x2, y2);
 			g.fillOval(x2 - 1, y2 - 1, 2, 2);
 		}
 
 		g.dispose();
-
-		return new ImageIcon(image);
-	}
-
-	/** Opens the sort-mode menu, with the active mode's direction offered as a toggle. */
-	private void showSortMenu()
-	{
-		final JPopupMenu menu = new JPopupMenu();
-
-		for (SortMode mode : SortMode.values())
-		{
-			final JMenuItem entry = new JMenuItem(mode.toString());
-
-			entry.addActionListener(e -> actions.setSortMode(mode));
-			menu.add(entry);
-		}
-
-		if (lastView.getSortMode() != SortMode.MANUAL)
-		{
-			final JMenuItem reverse = new JMenuItem(
-					lastView.isSortReversed() ? "Undo reverse" : "Reverse order");
-
-			reverse.addActionListener(e -> actions.toggleSortReversed());
-			menu.addSeparator();
-			menu.add(reverse);
-		}
-
-		menu.show(sortToggle, 0, sortToggle.getHeight());
-	}
-
-	/** @return the search field with its results dropdown beneath it. */
-	private JPanel buildSearchHeader()
-	{
-		searchField.setIcon(IconTextField.Icon.SEARCH);
-		searchField.setPreferredSize(new Dimension(PluginPanel.PANEL_WIDTH - 20, 30));
-		searchField.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		searchField.setHoverBackgroundColor(ColorScheme.DARK_GRAY_HOVER_COLOR);
-		searchField.setMinimumSize(new Dimension(0, 30));
-		searchField.addClearListener(() -> searchResults.setVisible(false));
-		searchField.getDocument().addDocumentListener(new SearchListener());
-
-		searchResults.setLayout(new BoxLayout(searchResults, BoxLayout.Y_AXIS));
-		searchResults.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		searchResults.setBorder(new EmptyBorder(4, 0, 4, 0));
-		searchResults.setVisible(false);
-
-		final JPanel search = new JPanel(new BorderLayout());
-
-		search.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		search.add(searchField, BorderLayout.NORTH);
-		search.add(searchResults, BorderLayout.CENTER);
-
-		return search;
-	}
-
-	/** @return the scrolling watchlist, anchored to the top of its viewport. */
-	private JScrollPane buildScrollingList()
-	{
-		final JPanel anchor = new JPanel(new BorderLayout());
-
-		anchor.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		anchor.add(list, BorderLayout.NORTH);
-
-		final JScrollPane scroll = new JScrollPane(anchor,
-				ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,
-				ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
-
-		scroll.setBorder(null);
-		scroll.getVerticalScrollBar().setUnitIncrement(16);
-
-		return scroll;
+		return new ImageIcon(img);
 	}
 
 	/**
-	 * Replaces the visible rows with the given watchlist.
-	 *
-	 * @param items   the watched items, in display order
-	 * @param preview the item being previewed without being watched, or {@code null}
+	 * Renders one collapsible group: a clickable header plus its rows, unless empty
+	 * (skipped) or collapsed (header only).
 	 */
-	public void rebuild(List<WatchedItem> items, WatchedItem preview, ViewState view)
+	private void renderGroup(String title, String groupKey, boolean collapsed,
+			List<TrackedItem> groupItems, PriceIndicatorMode indicatorMode)
 	{
-		lastItems = items;
-		lastPreview = preview;
-		lastView = view;
-
-		redraw();
-		refreshPopouts();
-	}
-
-	/**
-	 * Opens the detail view for an item and asks the plugin for its history.
-	 *
-	 * @param itemId the item to show
-	 */
-	public void openDetail(int itemId)
-	{
-		detailItemId = itemId;
-		awaitingDetailItem = true;
-		actions.requestDetailData(itemId);
-		redraw();
-	}
-
-	/** Returns from the detail view to the watchlist. */
-	private void closeDetail()
-	{
-		detailItemId = null;
-		awaitingDetailItem = false;
-		redraw();
-	}
-
-	/** @return the item the detail view is showing, or {@code null} if it is closed or gone. */
-	private WatchedItem detailItem()
-	{
-		if (detailItemId == null)
-			return null;
-
-		if (lastPreview != null && lastPreview.getItemId() == detailItemId)
-			return lastPreview;
-
-		return lastItems.stream()
-				.filter(item -> item.getItemId() == detailItemId)
-				.findFirst()
-				.orElse(null);
-	}
-
-	/**
-	 * Re-renders the panel from the last data pushed in.
-	 *
-	 * <p>An open detail view whose item has since been removed falls back to the
-	 * list rather than showing a stale card.
-	 *
-	 * <p>A redraw while an alert cell is being edited is dropped outright. Rebuilding
-	 * the card would tear the editor out from under the user mid-keystroke, and the
-	 * only thing a background price refresh had to say is repeated on the next one.
-	 */
-	private void redraw()
-	{
-		if (isEditingAlerts())
+		if (groupItems.isEmpty())
 			return;
 
-		final WatchedItem detail = detailItem();
+		long groupTotal = 0;
+		for (TrackedItem item : groupItems)
+			groupTotal += item.getAvgValue();
 
-		if (detail != null)
-		{
-			awaitingDetailItem = false;
-			drawDetail(detail);
+		trackedItemsPanel.add(buildGroupHeader(title, groupKey, collapsed, groupTotal));
+		trackedItemsPanel.add(Box.createVerticalStrut(4));
 
-			return;
-		}
-
-		if (detailItemId != null && !awaitingDetailItem)
-			detailItemId = null;
-
-		drawList();
-	}
-
-	/** Replaces the panel contents with one item's detail card. */
-	private void drawDetail(WatchedItem item)
-	{
-		list.removeAll();
-		rowRefs.clear();
-
-		list.add(buildDetailHeader(item));
-		list.add(Box.createVerticalStrut(6));
-
-		for (DetailSection section : lastView.getDetailSections())
-		{
-			final JPanel body = buildSection(section, item);
-
-			if (body == null)
-				continue;
-
-			list.add(sectionLabel(section.getLabel()));
-			list.add(body);
-			list.add(Box.createVerticalStrut(6));
-		}
-
-		list.revalidate();
-		list.repaint();
-	}
-
-	/** @return the detail card's heading: a back control, the item icon and its name. */
-	private JPanel buildDetailHeader(WatchedItem item)
-	{
-		final JPanel header = new JPanel(new BorderLayout(6, 0));
-
-		header.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		header.setBorder(new EmptyBorder(4, 4, 4, 4));
-
-		final JButton back = smallButton("<", ColorScheme.LIGHT_GRAY_COLOR, "Back to the watchlist");
-
-		back.addActionListener(e -> closeDetail());
-
-		final JLabel name = new JLabel();
-
-		name.setForeground(Color.WHITE);
-		name.setFont(FontManager.getRunescapeBoldFont());
-		EllipsisText.set(name, item.getName());
-
-		header.add(back, BorderLayout.WEST);
-		header.add(buildRowIcon(item), BorderLayout.CENTER);
-		header.add(name, BorderLayout.EAST);
-
-		return header;
-	}
-
-	/**
-	 * @return the body of one detail section, or {@code null} for a section whose
-	 *         implementation has not landed yet. The charts, market info, ratings,
-	 *         alchemy and alerts each arrive with their own issue; drawing a bare
-	 *         heading for them until then would look broken
-	 */
-	private JPanel buildSection(DetailSection section, WatchedItem item)
-	{
-		switch (section)
-		{
-			case ITEM_VALUES:
-				return buildCurrentValuesBlock(item);
-			case MARKET_INFO:
-				return buildMarketInfoBlock(item);
-			case PRICE_OVERVIEW:
-				return buildOverviewGrid(item);
-			case PRICE_GRAPH:
-				return buildGraphSection(item, PriceGraphPanel.Mode.PRICE);
-			case VOLUME_GRAPH:
-				return buildGraphSection(item, PriceGraphPanel.Mode.VOLUME);
-			case ALCHEMY:
-				return buildAlchemyBlock(item);
-			case LINKS:
-				return buildLinksBlock(item);
-			case ALERTS:
-				return buildAlertsSection(item);
-			default:
-				return null;
-		}
-	}
-
-	/**
-	 * @return the alerts section: the rule table and its add/remove/clear controls.
-	 *         The table itself is a long-lived field rather than rebuilt here, so an
-	 *         edit in progress is not destroyed by the redraw a price refresh causes
-	 */
-	private JPanel buildAlertsSection(WatchedItem item)
-	{
-		alertsModel.setItem(item);
-		applyAlertRenderers();
-
-		final JScrollPane scroll = new JScrollPane(alertsTable);
-
-		scroll.getViewport().setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		scroll.setBorder(BorderFactory.createLineBorder(PricewatchColors.TABLE_GRID));
-		scroll.setPreferredSize(new Dimension(0, ALERTS_TABLE_HEIGHT));
-
-		final JPanel section = new JPanel(new BorderLayout(0, 4));
-
-		section.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		section.setBorder(new EmptyBorder(4, 4, 4, 4));
-		section.add(scroll, BorderLayout.CENTER);
-		section.add(buildAlertButtons(item), BorderLayout.SOUTH);
-
-		return section;
-	}
-
-	/** @return the add/remove/clear button strip under the alerts table. */
-	private JPanel buildAlertButtons(WatchedItem item)
-	{
-		final JButton add = alertButton("+ Add", Color.WHITE, "Add an alert rule");
-		final JButton remove = alertButton("- Remove", Color.WHITE, "Remove the selected rules");
-		final JButton clear = alertButton("Clear", PricewatchColors.LOW, "Remove every alert rule");
-
-		add.addActionListener(e -> addAlertRule(item));
-		remove.addActionListener(e -> removeSelectedAlertRules(item));
-		clear.addActionListener(e -> clearAlertRules(item));
-
-		remove.setEnabled(alertsTable.getSelectedRowCount() > 0);
-		clear.setEnabled(!item.getNotifications().isEmpty());
-
-		for (ListSelectionListener listener : selectionListeners())
-			alertsTable.getSelectionModel().removeListSelectionListener(listener);
-
-		alertsTable.getSelectionModel().addListSelectionListener(
-				e -> remove.setEnabled(alertsTable.getSelectedRowCount() > 0));
-
-		final JPanel buttons = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
-
-		buttons.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		buttons.add(add);
-		buttons.add(remove);
-		buttons.add(clear);
-
-		return buttons;
-	}
-
-	/** @return the selection listeners currently on the alerts table, so a redraw does not stack more. */
-	private ListSelectionListener[] selectionListeners()
-	{
-		return ((DefaultListSelectionModel) alertsTable.getSelectionModel())
-				.getListSelectionListeners();
-	}
-
-	/** Appends a blank rule and hands it to the user to fill in. */
-	private void addAlertRule(WatchedItem item)
-	{
-		item.getNotifications().add(new NotificationRule());
-		alertsModel.fireTableDataChanged();
-		notifyAlertsEdited();
-		redraw();
-	}
-
-	/** Drops every selected rule, committing any edit in flight first so the row indices are stable. */
-	private void removeSelectedAlertRules(WatchedItem item)
-	{
-		if (alertsTable.isEditing())
-			alertsTable.getCellEditor().stopCellEditing();
-
-		final int[] selected = alertsTable.getSelectedRows();
-		if (selected.length == 0)
+		if (collapsed)
 			return;
 
-		final List<NotificationRule> rules = item.getNotifications();
-
-		Arrays.sort(selected);
-
-		for (int i = selected.length - 1; i >= 0; i--)
-		{
-			if (selected[i] >= 0 && selected[i] < rules.size())
-				rules.remove(selected[i]);
-		}
-
-		alertsModel.fireTableDataChanged();
-		notifyAlertsEdited();
-		redraw();
+		for (TrackedItem item : groupItems)
+			addItemRow(item, indicatorMode, groupItems);
 	}
 
-	/** Drops every rule on the item, behind a confirmation since there is no undo. */
-	private void clearAlertRules(WatchedItem item)
+	/** Adds a single tracked-item row plus its trailing spacer; {@code groupItems} scopes reorder within the group. */
+	private void addItemRow(TrackedItem item, PriceIndicatorMode indicatorMode, List<TrackedItem> groupItems)
 	{
-		if (item.getNotifications().isEmpty())
-			return;
-
-		final int choice = JOptionPane.showConfirmDialog(this,
-				"Remove all alert rules for this item?", "Clear Alerts", JOptionPane.YES_NO_OPTION);
-		if (choice != JOptionPane.YES_OPTION)
-			return;
-
-		item.getNotifications().clear();
-		alertsModel.fireTableDataChanged();
-		notifyAlertsEdited();
-		redraw();
+		trackedItemsPanel.add(buildTrackedItemRow(item, indicatorMode, groupItems));
+		trackedItemsPanel.add(Box.createVerticalStrut(4));
 	}
 
-	/** Points each alerts column at its editor and renderer. */
-	private void applyAlertRenderers()
+	/** @return the position of {@code itemId} within {@code list}, or -1 if absent. */
+	private static int indexOfItem(List<TrackedItem> list, int itemId)
 	{
-		final Font font = FontManager.getRunescapeSmallFont();
+		for (int i = 0; i < list.size(); i++)
+			if (list.get(i).getItemId() == itemId)
+				return i;
 
-		alertsTable.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		alertsTable.setForeground(Color.WHITE);
-		alertsTable.setGridColor(PricewatchColors.TABLE_GRID);
-		alertsTable.setRowHeight(22);
-		alertsTable.setFont(font);
-		alertsTable.setFillsViewportHeight(true);
-		alertsTable.getTableHeader().setFont(font);
-		alertsTable.getTableHeader().setReorderingAllowed(false);
-		alertsTable.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
-		alertsTable.putClientProperty("terminateEditOnFocusLost", Boolean.TRUE);
-
-		final TableColumnModel columns = alertsTable.getColumnModel();
-
-		columns.getColumn(0).setCellEditor(new DefaultCellEditor(metricCombo(font)));
-		columns.getColumn(1).setCellEditor(new DefaultCellEditor(comboOf(ALERT_WINDOWS, font)));
-		columns.getColumn(2).setCellEditor(new DefaultCellEditor(
-				comboOf(NotificationOperation.values(), font)));
-		columns.getColumn(3).setCellEditor(new AlertValueEditor(alertsModel::getItem));
-
-		final AlertCellRenderer renderer = new AlertCellRenderer();
-
-		for (int i = 0; i < alertsTable.getColumnCount(); i++)
-		{
-			if (alertsTable.getColumnClass(i) != Boolean.class)
-				columns.getColumn(i).setCellRenderer(renderer);
-		}
-
-		columns.getColumn(alertsTable.getColumnCount() - 1).setMaxWidth(30);
-		centreAlertsHeader();
-	}
-
-	/** Centres the alerts table header to match its cells. */
-	private void centreAlertsHeader()
-	{
-		final TableCellRenderer header = alertsTable.getTableHeader().getDefaultRenderer();
-
-		if (header instanceof DefaultTableCellRenderer)
-			((DefaultTableCellRenderer) header).setHorizontalAlignment(SwingConstants.CENTER);
-	}
-
-	/** @return the metric dropdown, which shows full names even though the cells show abbreviations. */
-	private static JComboBox<NotificationMetric> metricCombo(Font font)
-	{
-		final JComboBox<NotificationMetric> combo = comboOf(NotificationMetric.values(), font);
-
-		combo.setRenderer(new DefaultListCellRenderer()
-		{
-			@Override
-			public Component getListCellRendererComponent(JList<?> list, Object value, int index,
-					boolean isSelected, boolean cellHasFocus)
-			{
-				super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
-
-				if (value instanceof NotificationMetric)
-					setText(((NotificationMetric) value).getDisplayName());
-
-				setFont(font);
-
-				return this;
-			}
-		});
-
-		return combo;
-	}
-
-	/** @return a small-font dropdown over the given constants. */
-	private static <T> JComboBox<T> comboOf(T[] values, Font font)
-	{
-		final JComboBox<T> combo = new JComboBox<>(values);
-
-		combo.setFont(font);
-
-		return combo;
-	}
-
-	/** @return a compact button styled for the alerts strip. */
-	private static JButton alertButton(String text, Color foreground, String tooltip)
-	{
-		final JButton button = new JButton(text);
-
-		button.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		button.setForeground(foreground);
-		button.setFocusPainted(false);
-		button.setFont(FontManager.getRunescapeSmallFont());
-		button.setMargin(new Insets(2, 5, 2, 5));
-		button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-		button.setToolTipText(tooltip);
-
-		return button;
-	}
-
-	/** Tells the plugin an alert rule changed, so it can persist the watchlist. */
-	private void notifyAlertsEdited()
-	{
-		if (detailItemId != null)
-			actions.alertsEdited(detailItemId);
-	}
-
-	/** @return whether an alert cell is mid-edit, so callers can avoid discarding it. */
-	public boolean isEditingAlerts()
-	{
-		return alertsTable.isEditing();
+		return -1;
 	}
 
 	/**
-	 * @return the ratings strip appended to the market info block: volatility,
-	 *         liquidity, the 30-day range position, and the buy/sell pressure bar
+	 * Builds a clickable accordion header (chevron + title + group total value) that
+	 * toggles the group's collapsed state.
 	 */
-	private JPanel buildRatings(WatchedItem item)
+	private JPanel buildGroupHeader(String title, String groupKey, boolean collapsed, long groupTotal)
 	{
-		final JPanel ratings = new JPanel(new GridLayout(0, 1, 0, 3));
-
-		ratings.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		ratings.setBorder(new EmptyBorder(4, 8, 4, 8));
-
-		final PriceStats day = item.getWindowStats().get(TimeWindow.H24);
-
-		ratings.add(ratingRow("Volatility", MarketClassifier.volatility(item.getSeriesFor(TimeWindow.WEEK))));
-		ratings.add(ratingRow("Liquidity", MarketClassifier.liquidity(day == null ? 0 : day.getVolume())));
-
-		final long[] range = MarketClassifier.thirtyDayRange(item.getSeriesFor(TimeWindow.MONTH));
-
-		if (range != null && range[1] > range[0])
+		JPanel header = new JPanel(new BorderLayout(6, 0))
 		{
-			final PriceRangeBar bar = new PriceRangeBar();
-
-			bar.setRange(range[0], range[1], item.getAvgPrice());
-			bar.setToolTipText("30-day range " + GpFormat.grouped(range[0])
-					+ " to " + GpFormat.grouped(range[1]) + " - "
-					+ MarketClassifier.rangePosition(range[0], range[1], item.getAvgPrice()));
-			ratings.add(bar);
-		}
-
-		ratings.add(buildPressureBar(item));
-
-		return ratings;
-	}
-
-	/** @return a labelled rating, dashed when there is not enough history to classify. */
-	private static JPanel ratingRow(String caption, String value)
-	{
-		final JPanel row = new JPanel(new GridLayout(1, 2, 6, 0));
-
-		row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		row.add(infoCaption(caption));
-		row.add(infoValue(value == null ? "-" : value,
-				value == null ? ColorScheme.MEDIUM_GRAY_COLOR : ColorScheme.LIGHT_GRAY_COLOR,
-				value == null ? "Not enough history yet" : null));
-
-		return row;
-	}
-
-	/** @return the buy/sell pressure bar over the configured look-back window. */
-	private JPanel buildPressureBar(WatchedItem item)
-	{
-		final PressureWindow window = config.pressureWindow();
-		final long[] volumes = MarketClassifier.buySellVolume(
-				item.getSeriesFor(window.window()), window.duration());
-		final long total = volumes[0] + volumes[1];
-
-		final BuySellBar bar = new BuySellBar();
-
-		bar.setRatio(total > 0 ? (double) volumes[0] / total : 0.5);
-		bar.setToolTipText("Bought " + GpFormat.shortValue(volumes[0])
-				+ " against sold " + GpFormat.shortValue(volumes[1]) + " over " + window);
-
-		final JPanel wrapper = new JPanel(new BorderLayout(0, 2));
-
-		wrapper.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		wrapper.add(infoCaption("Pressure (" + window + ")"), BorderLayout.NORTH);
-		wrapper.add(bar, BorderLayout.CENTER);
-
-		return wrapper;
-	}
-
-	/**
-	 * @return the alchemy block: both alch values, and what a cast actually nets once
-	 *         the item and its runes are paid for
-	 */
-	private JPanel buildAlchemyBlock(WatchedItem item)
-	{
-		final JPanel block = new JPanel(new GridLayout(0, 3, 6, 2));
-
-		block.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		block.setBorder(new EmptyBorder(4, 8, 6, 8));
-
-		block.add(infoCaption(""));
-		block.add(infoCaption("Value"));
-		block.add(infoCaption("Profit"));
-
-		block.add(infoCaption("High"));
-		block.add(figure(item.getHighAlch()));
-		block.add(alchProfitCell(item, item.getHighAlch(), MarketFigures.HIGH_ALCH_FIRE_RUNES));
-
-		block.add(infoCaption("Low"));
-		block.add(figure(item.getLowAlch()));
-		block.add(alchProfitCell(item, item.getLowAlch(), MarketFigures.LOW_ALCH_FIRE_RUNES));
-
-		return block;
-	}
-
-	/** @return one alch-profit cell, tinted by sign, with the full sum in its tooltip. */
-	private JLabel alchProfitCell(WatchedItem item, long alchValue, int fireQty)
-	{
-		if (alchValue <= 0 || item.getAvgPrice() <= 0)
-			return infoValue("-", ColorScheme.MEDIUM_GRAY_COLOR, "No alch value or price yet");
-
-		final long nature = lastView.getNatureRunePrice();
-		final long fire = lastView.getFireRunePrice();
-		final long profit = MarketFigures.alchProfit(alchValue, item.getAvgPrice(), nature, fire, fireQty);
-
-		final String tooltip = "<html>" + GpFormat.grouped(alchValue) + " (alch value)<br>"
-				+ "- " + GpFormat.grouped(item.getAvgPrice()) + " (item avg)<br>"
-				+ "- " + GpFormat.grouped(nature) + " (nature rune)<br>"
-				+ "- " + fireQty + " x " + GpFormat.grouped(fire) + " (fire rune)<br>"
-				+ "= " + MarketFigures.signed(profit) + "</html>";
-
-		Color colour = ColorScheme.LIGHT_GRAY_COLOR;
-		if (profit > 0)
-			colour = PricewatchColors.HIGH;
-		else if (profit < 0)
-			colour = PricewatchColors.LOW;
-
-		return infoValue(MarketFigures.signed(profit), colour, tooltip);
-	}
-
-	/**
-	 * @return the market info block: the GE sell tax on the current price, and when
-	 *         the item last traded on each side, dimmed once those times go stale
-	 */
-	private JPanel buildMarketInfoBlock(WatchedItem item)
-	{
-		final long now = System.currentTimeMillis() / 1000L;
-		final int threshold = config.stalePriceThresholdMinutes();
-
-		final JPanel block = new JPanel(new GridLayout(0, 2, 6, 2));
-
-		block.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		block.setBorder(new EmptyBorder(4, 8, 6, 8));
-
-		block.add(infoCaption("GE tax"));
-		block.add(infoValue(GpFormat.shortGp(MarketFigures.geTax(item.getAvgPrice())),
-				ColorScheme.LIGHT_GRAY_COLOR, "2% of the sale price, nothing under 50gp, capped at 5M"));
-
-		block.add(infoCaption("Buy limit"));
-		block.add(buyLimitValue(item, now));
-
-		block.add(infoCaption("Last bought"));
-		block.add(tradeTime(item.getLatestHighTime(), now, threshold));
-
-		block.add(infoCaption("Last sold"));
-		block.add(tradeTime(item.getLatestLowTime(), now, threshold));
-
-		final JPanel section = new JPanel(new BorderLayout(0, 4));
-
-		section.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		section.add(block, BorderLayout.NORTH);
-		section.add(buildRatings(item), BorderLayout.CENTER);
-
-		return section;
-	}
-
-	/**
-	 * @return the buy-limit cell: {@code bought / limit} with a reset countdown once
-	 *         purchases have been seen this window, the plain limit while untouched,
-	 *         and {@code -} for an item the GE does not limit
-	 */
-	private static JLabel buyLimitValue(WatchedItem item, long now)
-	{
-		final int limit = item.getBuyLimit();
-		if (limit <= 0)
-			return infoValue("-", ColorScheme.LIGHT_GRAY_COLOR, "This item has no GE buy limit");
-
-		if (item.getLimitResetEpoch() <= 0)
-		{
-			return infoValue(GpFormat.grouped(limit), ColorScheme.LIGHT_GRAY_COLOR,
-					"How many you may buy per 4-hour window");
-		}
-
-		final int bought = item.getLimitBought();
-		final String text = GpFormat.grouped(bought) + " / " + GpFormat.grouped(limit);
-		final String tooltip = "Bought this window — resets in "
-				+ MarketFigures.formatCountdown(item.getLimitResetEpoch() - now);
-
-		return infoValue(text, bought >= limit ? PricewatchColors.LOW : ColorScheme.LIGHT_GRAY_COLOR, tooltip);
-	}
-
-	/** @return a trade-time value, dimmed when the timestamp has gone stale. */
-	private static JLabel tradeTime(long epochSeconds, long now, int thresholdMinutes)
-	{
-		final boolean stale = MarketFigures.isStale(epochSeconds, now, thresholdMinutes);
-
-		return infoValue(MarketFigures.formatAge(epochSeconds, now),
-				stale ? ColorScheme.MEDIUM_GRAY_COLOR : ColorScheme.LIGHT_GRAY_COLOR,
-				stale ? "Older than the stale threshold" : null);
-	}
-
-	/** @return a caption cell in a two-column info block. */
-	private static JLabel infoCaption(String text)
-	{
-		final JLabel label = new JLabel(text);
-
-		label.setForeground(ColorScheme.BRAND_ORANGE);
-		label.setFont(FontManager.getRunescapeSmallFont());
-
-		return label;
-	}
-
-	/** @return a value cell in a two-column info block. */
-	private static JLabel infoValue(String text, Color colour, String tooltip)
-	{
-		final JLabel label = new JLabel(text, SwingConstants.RIGHT);
-
-		label.setForeground(colour);
-		label.setFont(FontManager.getRunescapeSmallFont());
-		label.setToolTipText(tooltip);
-
-		return label;
-	}
-
-	/**
-	 * @return the overview grid: one row per time window in the configured preset,
-	 *         with high, low, average, volume and the change against the live price
-	 */
-	private JPanel buildOverviewGrid(WatchedItem item)
-	{
-		final JPanel grid = new JPanel(new GridLayout(0, 6, 4, 2));
-
-		grid.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		grid.setBorder(new EmptyBorder(4, 6, 6, 6));
-
-		for (String heading : new String[]{"", "High", "Low", "Avg", "Vol", "Chg"})
-			grid.add(infoCaption(heading));
-
-		for (TimeWindow window : TimeWindow.values())
-		{
-			if (!config.overviewPreset().getWindows().contains(window))
-				continue;
-
-			final PriceStats stats = item.getWindowStats().get(window);
-
-			grid.add(infoCaption(window.getLabel()));
-			grid.add(figure(stats == null ? 0 : stats.getHigh()));
-			grid.add(figure(stats == null ? 0 : stats.getLow()));
-			grid.add(figure(stats == null ? 0 : stats.getAvg()));
-			grid.add(figure(stats == null ? 0 : stats.getVolume()));
-			grid.add(changeCell(item, stats));
-		}
-
-		return grid;
-	}
-
-	/** @return a numeric grid cell, dashed when there is no figure. */
-	private static JLabel figure(long value)
-	{
-		return infoValue(value > 0 ? GpFormat.shortValue(value) : "-",
-				value > 0 ? ColorScheme.LIGHT_GRAY_COLOR : ColorScheme.MEDIUM_GRAY_COLOR,
-				value > 0 ? GpFormat.grouped(value) : null);
-	}
-
-	/** @return the change of the live price against a window's average, tinted by direction. */
-	private static JLabel changeCell(WatchedItem item, PriceStats stats)
-	{
-		final double change = MarketFigures.percentChange(
-				item.getAvgPrice(), stats == null ? 0 : stats.getAvg());
-
-		Color colour = ColorScheme.MEDIUM_GRAY_COLOR;
-		if (change > 0)
-			colour = PricewatchColors.HIGH;
-		else if (change < 0)
-			colour = PricewatchColors.LOW;
-
-		return infoValue(MarketFigures.formatChange(change), colour, null);
-	}
-
-	/** @return the links block: the wiki page and the live prices page for this item. */
-	private JPanel buildLinksBlock(WatchedItem item)
-	{
-		final JPanel block = new JPanel(new GridLayout(1, 2, 6, 0));
-
-		block.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		block.setBorder(new EmptyBorder(4, 8, 6, 8));
-		block.add(linkButton("Wiki", WIKI_BASE + item.getName().replace(' ', '_')));
-		block.add(linkButton("Live Prices", PRICES_BASE + item.getItemId()));
-
-		return block;
-	}
-
-	/** @return a button that opens a URL in the user's browser. */
-	private static JButton linkButton(String text, String url)
-	{
-		final JButton button = new JButton(text);
-
-		button.setFont(FontManager.getRunescapeSmallFont());
-		button.setFocusPainted(false);
-		button.setToolTipText(url);
-		button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-		button.addActionListener(e -> LinkBrowser.browse(url));
-
-		return button;
-	}
-
-	/** @return a chart for the item, with a control to pop it out into its own window. */
-	private JPanel buildGraphSection(WatchedItem item, PriceGraphPanel.Mode mode)
-	{
-		final PriceGraphPanel graph = new PriceGraphPanel(mode);
-
-		graph.setPreferredSize(new Dimension(PluginPanel.PANEL_WIDTH - 20, GRAPH_HEIGHT));
-		feed(graph, item, mode);
-
-		final JButton popout = smallButton("^", ColorScheme.LIGHT_GRAY_COLOR, "Open in a resizable window");
-
-		popout.addActionListener(e -> openGraphPopout(item, mode));
-
-		final JPanel controls = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
-
-		controls.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		controls.add(popout);
-
-		final JPanel section = new JPanel(new BorderLayout());
-
-		section.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		section.add(controls, BorderLayout.NORTH);
-		section.add(graph, BorderLayout.CENTER);
-
-		return section;
-	}
-
-	/** Pushes an item's four series and current price into a chart. */
-	private static void feed(PriceGraphPanel graph, WatchedItem item, PriceGraphPanel.Mode mode)
-	{
-		graph.setData(item.getSeries5m(), item.getSeries1h(), item.getSeries6h(), item.getSeries24h(),
-				mode == PriceGraphPanel.Mode.PRICE ? item.getAvgPrice() : 0);
-	}
-
-	/**
-	 * Opens a chart in its own resizable window, or focuses the one already open.
-	 *
-	 * <p>The window is registered so later refreshes push fresh data into it; it
-	 * deregisters itself when closed.
-	 */
-	private void openGraphPopout(WatchedItem item, PriceGraphPanel.Mode mode)
-	{
-		final String key = mode + ":" + item.getItemId();
-		final PopoutHandle existing = popouts.get(key);
-
-		if (existing != null)
-		{
-			existing.frame.toFront();
-			return;
-		}
-
-		final PriceGraphPanel graph = new PriceGraphPanel(mode, true);
-
-		feed(graph, item, mode);
-
-		final JFrame frame = new JFrame(item.getName() + " — " + mode);
-
-		frame.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
-		frame.setSize(POPOUT_WIDTH, POPOUT_HEIGHT);
-		frame.setLocationRelativeTo(this);
-		frame.add(graph);
-		frame.addWindowListener(new PopoutCloseListener(key));
-		frame.setVisible(true);
-
-		popouts.put(key, new PopoutHandle(frame,
-				fresh -> feed(graph, fresh, mode),
-				() -> popouts.remove(key)));
-	}
-
-	/** Pushes the latest data into every open pop-out, closing any whose item has gone. */
-	private void refreshPopouts()
-	{
-		new ArrayList<>(popouts.entrySet()).forEach(entry ->
-		{
-			final int itemId = Integer.parseInt(entry.getKey().substring(entry.getKey().indexOf(':') + 1));
-			final WatchedItem item = lastItems.stream()
-					.filter(candidate -> candidate.getItemId() == itemId)
-					.findFirst()
-					.orElse(null);
-
-			if (item == null)
-			{
-				entry.getValue().frame.dispose();
-				return;
-			}
-
-			entry.getValue().refresher.accept(item);
-		});
-	}
-
-	/** Disposes every open pop-out, and the changelog window. Called when the plugin shuts down. */
-	public void closePopouts()
-	{
-		new ArrayList<>(popouts.values()).forEach(handle -> handle.frame.dispose());
-		popouts.clear();
-
-		if (changelogWindow != null)
-			changelogWindow.dispose();
-	}
-
-	/** Deregisters a pop-out when its window is closed. */
-	private final class PopoutCloseListener extends WindowAdapter
-	{
-		private final String key;
-
-		/**
-		 * @param key the pop-out's registry key
-		 */
-		PopoutCloseListener(String key)
-		{
-			this.key = key;
-		}
-
-		@Override
-		public void windowClosed(WindowEvent e)
-		{
-			popouts.remove(key);
-		}
-	}
-
-	/**
-	 * @return the three-cell current values block: high, low and average. Stockpile's
-	 *         fourth cell and its profit label are both quantity-derived, so neither
-	 *         has a counterpart here
-	 */
-	private static JPanel buildCurrentValuesBlock(WatchedItem item)
-	{
-		final JPanel block = new JPanel(new GridLayout(1, 3, 4, 0));
-
-		block.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		block.setBorder(new EmptyBorder(4, 4, 4, 4));
-
-		block.add(valueCell("High", item.getHighPrice()));
-		block.add(valueCell("Low", item.getLowPrice()));
-		block.add(valueCell("Average", item.getAvgPrice()));
-
-		return block;
-	}
-
-	/** @return one labelled figure in the current values block. */
-	private static JPanel valueCell(String label, long value)
-	{
-		final JPanel cell = new JPanel(new GridLayout(2, 1));
-
-		cell.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-
-		final JLabel caption = new JLabel(label, SwingConstants.CENTER);
-
-		caption.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-		caption.setFont(FontManager.getRunescapeSmallFont());
-
-		final JLabel figure = new JLabel(value > 0 ? GpFormat.shortValue(value) : "-", SwingConstants.CENTER);
-
-		figure.setForeground(value > 0 ? ColorScheme.GRAND_EXCHANGE_PRICE : ColorScheme.MEDIUM_GRAY_COLOR);
-		figure.setToolTipText(value > 0 ? GpFormat.fullGp(value) : "No price yet");
-
-		cell.add(caption);
-		cell.add(figure);
-
-		return cell;
-	}
-
-	/** Replaces the panel contents with the grouped watchlist. */
-	private void drawList()
-	{
-		list.removeAll();
-		watchedIds.clear();
-		rowRefs.clear();
-		lastItems.forEach(item -> watchedIds.add(item.getItemId()));
-
-		updateSortToggle();
-		updateCompactToggle();
-		clearButton.setEnabled(!lastItems.isEmpty());
-
-		final PriceLineOptions options = new PriceLineOptions(config);
-		final List<WatchlistGrouping.Group> groups = WatchlistGrouping.group(
-				lastItems, lastView.getCategories(),
-				lastView.isFavoritesCollapsed(), lastView.isUncategorizedCollapsed(),
-				lastView.getSortMode(), lastView.isSortReversed(), filterField.getText());
-
-		if (lastPreview != null)
-		{
-			list.add(sectionLabel("Preview"));
-			list.add(buildRow(lastPreview, options, true));
-			list.add(Box.createVerticalStrut(6));
-		}
-
-		if (groups.isEmpty())
-		{
-			empty.setText(lastItems.isEmpty() ? "Search to add an item" : "Nothing matches that filter");
-			list.add(empty);
-		}
-
-		for (WatchlistGrouping.Group group : groups)
-		{
-			list.add(buildGroupHeader(group));
-
-			if (group.isCollapsed())
-				continue;
-
-			for (WatchedItem item : group.getItems())
-			{
-				final JPanel row = buildRow(item, options, false);
-
-				rowRefs.add(new RowRef(row, item.getItemId(), group.getKey()));
-				list.add(row);
-				list.add(Box.createVerticalStrut(2));
-			}
-
-			list.add(Box.createVerticalStrut(4));
-		}
-
-		list.revalidate();
-		list.repaint();
-	}
-
-	/** @return a clickable accordion header that rolls its group up or down. */
-	private JPanel buildGroupHeader(WatchlistGrouping.Group group)
-	{
-		final JPanel header = new JPanel(new BorderLayout());
-
-		header.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		header.setBorder(new EmptyBorder(4, 2, 2, 2));
-		header.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-
-		final JLabel label = new JLabel((group.isCollapsed() ? "+ " : "- ")
-				+ group.getLabel() + "  (" + group.getItems().size() + ")");
-
-		label.setForeground(ColorScheme.BRAND_ORANGE);
-		label.setFont(FontManager.getRunescapeSmallFont());
-
-		header.add(label, BorderLayout.CENTER);
-		header.addMouseListener(new CollapseListener(group));
-
-		return header;
-	}
-
-	/** @return a small heading used to separate the preview entry from the watchlist. */
-	private static JLabel sectionLabel(String text)
-	{
-		final JLabel label = new JLabel(text);
-
-		label.setForeground(ColorScheme.BRAND_ORANGE);
-		label.setFont(FontManager.getRunescapeSmallFont());
-		label.setBorder(new EmptyBorder(2, 2, 2, 2));
-
-		return label;
-	}
-
-	/** @return one watchlist row: icon on the left, name over a price line, remove button on the right. */
-	private JPanel buildRow(WatchedItem item, PriceLineOptions options, boolean isPreview)
-	{
-		final boolean hovered = item.getItemId() == hoveredItemId;
-
-		final JPanel card = new JPanel(new BorderLayout(6, 0))
-		{
-			/** Keeps a row from stretching vertically to fill the list's spare space. */
 			@Override
 			public Dimension getMaximumSize()
 			{
 				return new Dimension(Integer.MAX_VALUE, getPreferredSize().height);
 			}
 		};
+		header.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		header.setBorder(new EmptyBorder(4, 2, 2, 4));
+		header.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		header.putClientProperty(GROUP_HEADER_KEY, Boolean.TRUE);
 
-		card.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		card.setBorder(new EmptyBorder(lastView.isCompact() ? 2 : 6, 8, lastView.isCompact() ? 2 : 6, 8));
-		card.putClientProperty(ROW_ITEM_ID, item.getItemId());
+		JLabel chevron = new JLabel(collapsed ? "▸" : "▾");
+		chevron.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		chevron.setFont(FontManager.getRunescapeSmallFont());
 
-		final JLabel name = new JLabel();
+		JLabel titleLabel = new JLabel(title);
+		titleLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		titleLabel.setFont(FontManager.getRunescapeBoldFont());
 
-		name.setForeground(Color.WHITE);
-		name.setFont(FontManager.getRunescapeSmallFont());
-		EllipsisText.set(name, item.getName());
+		JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
+		left.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		left.add(chevron);
+		left.add(titleLabel);
 
-		final RowButtons buttons = buildRowButtons(item, isPreview, hovered);
+		JLabel totalLabel = new JLabel(GpFormat.shortValue(groupTotal));
+		totalLabel.setForeground(PricewatchColors.MUTED);
+		totalLabel.setFont(FontManager.getRunescapeSmallFont());
+		totalLabel.setToolTipText(NUMBER_FORMAT.format(groupTotal) + " gp");
 
-		final JPanel nameRow = new JPanel(new BorderLayout(6, 0));
-
-		nameRow.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		nameRow.setAlignmentX(Component.LEFT_ALIGNMENT);
-		nameRow.add(name, BorderLayout.CENTER);
-		nameRow.add(buttons.panel, BorderLayout.EAST);
-
-		final JPanel centre = new JPanel();
-
-		centre.setLayout(new BoxLayout(centre, BoxLayout.Y_AXIS));
-		centre.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		centre.add(nameRow);
-
-		if (!lastView.isCompact())
+		header.add(left, BorderLayout.WEST);
+		header.add(totalLabel, BorderLayout.EAST);
+		header.addMouseListener(new MouseAdapter()
 		{
-			final JComponent figures = buildRowFigures(item, options);
+			@Override
+			public void mouseClicked(MouseEvent e)
+			{
+				if (onSetGroupCollapsed != null)
+					onSetGroupCollapsed.accept(groupKey, !collapsed);
+			}
+		});
 
-			figures.setAlignmentX(Component.LEFT_ALIGNMENT);
-			centre.add(figures);
-		}
-
-		card.add(buildRowLeading(item, isPreview), BorderLayout.WEST);
-		card.add(centre, BorderLayout.CENTER);
-
-		installRowHover(card, item, buttons);
-
-		return card;
+		return header;
 	}
+
+	private static final Color STAR_HIDDEN = new Color(0, 0, 0, 0);
+	private static final Color REMOVE_COLOR = new Color(200, 60, 60);
+	private static final Color STAR_DIM = new Color(110, 110, 110);
+	private static final Color STAR_PREVIEW = new Color(255, 235, 140);
+	private static final String STAR_ROW_HOVERED = "pricewatch.starRowHovered";
+	private static final String STAR_HOVERED = "pricewatch.starHovered";
 
 	/**
-	 * Builds a row's second line: each visible figure unlabelled, coloured by what it is
-	 * rather than captioned, and carrying its own hover tint and full-value tooltip.
-	 *
-	 * <p>A {@link GridBagLayout} with equal weights keeps the columns aligned down the list
-	 * and, unlike the single HTML line this replaced, lets a wide volume figure share the
-	 * width instead of pushing the rest of the row out of the panel.
-	 *
-	 * @return the figures, or a single status label when there is nothing to show
+	 * Builds the favorite-toggle star shown beneath each row's remove button. Like the
+	 * remove button it is hidden until the row is hovered; hovering the star itself previews
+	 * the toggle (fills light gold to add a favorite, or drops the gold to remove one).
 	 */
-	private JComponent buildRowFigures(WatchedItem item, PriceLineOptions options)
+	private JLabel buildFavoriteStar(TrackedItem item)
 	{
-		final String status = rowStatus(item, options);
-
-		if (status != null)
-		{
-			final JLabel label = new JLabel(status);
-
-			label.setFont(FontManager.getRunescapeSmallFont());
-			label.setForeground(item.isPriceLoadFailed() ? PricewatchColors.LOW : PricewatchColors.MUTED);
-			label.setBorder(new EmptyBorder(1, PRICES_LEFT_PAD, 0, 0));
-
-			return label;
-		}
-
-		final PriceStats stats = statsFor(item, options.window);
-		final boolean live = options.window == TimeWindow.LIVE;
-
-		final JPanel figures = new JPanel(new GridBagLayout());
-
-		figures.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		figures.setBorder(new EmptyBorder(1, PRICES_LEFT_PAD, 0, 0));
-
-		final GridBagConstraints c = new GridBagConstraints();
-
-		c.fill = GridBagConstraints.HORIZONTAL;
-		c.insets = new Insets(0, 0, 0, 4);
-		c.gridy = 0;
-		c.weightx = 1;
-		c.anchor = GridBagConstraints.WEST;
-
-		int column = 0;
-
-		if (options.high)
-		{
-			c.gridx = column++;
-			figures.add(valueCell(stats.getHigh(), "High", PricewatchColors.HIGH,
-					PricewatchColors.TINT_HIGH, live ? item.getHighDelta() : 0, options), c);
-		}
-
-		if (options.low)
-		{
-			c.gridx = column++;
-			figures.add(valueCell(stats.getLow(), "Low", PricewatchColors.LOW,
-					PricewatchColors.TINT_LOW, live ? item.getLowDelta() : 0, options), c);
-		}
-
-		if (options.avg)
-		{
-			c.gridx = column++;
-			figures.add(valueCell(stats.getAvg(), "Avg", PricewatchColors.AVG,
-					PricewatchColors.TINT_AVG, live ? item.getAvgDelta() : 0, options), c);
-		}
-
-		if (options.volume)
-		{
-			c.gridx = column++;
-			figures.add(buildVolumeCell(volumeFor(item, options.window)), c);
-		}
-
-		return figures;
-	}
-
-	/**
-	 * @return the placeholder a row shows instead of figures, or {@code null} when the
-	 *         item has prices to draw
-	 */
-	static String rowStatus(WatchedItem item, PriceLineOptions options)
-	{
-		if (options.window == TimeWindow.NONE || !options.anyColumn())
-			return "No figures selected";
-
-		if (!item.isTradeable())
-			return "Not tradeable";
-
-		if (item.isPriceLoadFailed())
-			return "Unable to load price";
-
-		if (!item.hasPrices())
-			return "Prices loading...";
-
-		return null;
-	}
-
-	/**
-	 * @return one price figure: short-format text in its own colour, a full-value tooltip,
-	 *         and a hover tint, dimmed when the underlying trade is stale
-	 */
-	private JLabel valueCell(long value, String label, Color colour, Color tint, int delta,
-			PriceLineOptions options)
-	{
-		final JLabel cell = new JLabel();
-		final String text = GpFormat.shortValue(value);
-
-		cell.setFont(FontManager.getRunescapeSmallFont());
-		cell.setForeground(options.movementColour(delta, colour));
-		cell.setText(text);
-		cell.setToolTipText(label + ": " + NUMBER_FORMAT.format(value) + " gp");
-
-		final HoverTintListener listener = new HoverTintListener(cell, text, tint);
-
-		cell.addMouseListener(listener);
-		SwingUtilities.invokeLater(listener::applyIfHovered);
-
-		return cell;
-	}
-
-	/** @return the traded-volume figure, or a dash when no window carries volume yet. */
-	private JLabel buildVolumeCell(long volume)
-	{
-		final JLabel cell = new JLabel();
-		final String text = volume > 0 ? GpFormat.shortValue(volume) : "-";
-
-		cell.setFont(FontManager.getRunescapeSmallFont());
-		cell.setForeground(COLOR_VOLUME);
-		cell.setText(text);
-		cell.setToolTipText(volume > 0
-				? "Volume: " + NUMBER_FORMAT.format(volume)
-				: "Volume: not reported for this window yet");
-
-		final HoverTintListener listener = new HoverTintListener(cell, text, PricewatchColors.TINT_VOLUME);
-
-		cell.addMouseListener(listener);
-		SwingUtilities.invokeLater(listener::applyIfHovered);
-
-		return cell;
-	}
-
-	/**
-	 * Resolves the volume to show for a window.
-	 *
-	 * <p>The wiki's latest-price endpoint carries no volume, so the default Live line would
-	 * always render a dash and the Show Volume setting would look broken. Live therefore
-	 * borrows the widest window that does report volume, which is what someone enabling the
-	 * column is asking for — how much of this item trades.
-	 *
-	 * @return the traded volume, or 0 when no window has reported one yet
-	 */
-	static long volumeFor(WatchedItem item, TimeWindow window)
-	{
-		if (window != TimeWindow.LIVE)
-		{
-			final PriceStats stats = item.getWindowStats().get(window);
-
-			return stats == null ? 0 : stats.getVolume();
-		}
-
-		return Stream.of(TimeWindow.H24, TimeWindow.H6, TimeWindow.H1, TimeWindow.M5)
-				.map(item.getWindowStats()::get)
-				.filter(Objects::nonNull)
-				.mapToLong(PriceStats::getVolume)
-				.filter(volume -> volume > 0)
-				.findFirst()
-				.orElse(0);
-	}
-
-	/** @return the item's icon, loaded asynchronously into a fixed-size label. */
-	private JLabel buildRowIcon(WatchedItem item)
-	{
-		final JLabel icon = new JLabel();
-
-		icon.setPreferredSize(new Dimension(ICON_WIDTH, ICON_WIDTH));
-		icon.setHorizontalAlignment(SwingConstants.CENTER);
-
-		final AsyncBufferedImage image = itemManager.getImage(item.getItemId(), 1, item.isStackable());
-
-		image.addTo(icon);
-
-		return icon;
-	}
-
-	/**
-	 * @return the row's leading cluster: the drag handle, when dragging is possible,
-	 *         followed by the item icon
-	 */
-	private JPanel buildRowLeading(WatchedItem item, boolean isPreview)
-	{
-		final JPanel leading = new JPanel(new BorderLayout(2, 0));
-
-		leading.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-
-		if (!isPreview && reorderMode && lastView.getSortMode() == SortMode.MANUAL)
-			leading.add(buildDragHandle(item), BorderLayout.WEST);
-
-		leading.add(buildRowIcon(item), BorderLayout.CENTER);
-
-		return leading;
-	}
-
-	/**
-	 * @return the grip the user drags to reorder. Only offered in manual sort — under
-	 *         any other mode the displayed order is computed, so dragging a row would
-	 *         appear to do nothing
-	 */
-	private JLabel buildDragHandle(WatchedItem item)
-	{
-		final JLabel handle = new JLabel("=", SwingConstants.CENTER);
-
-		handle.setForeground(ColorScheme.MEDIUM_GRAY_COLOR);
-		handle.setFont(FontManager.getRunescapeSmallFont());
-		handle.setToolTipText("Drag onto another row to reorder");
-		handle.setCursor(Cursor.getPredefinedCursor(Cursor.MOVE_CURSOR));
-		handle.setPreferredSize(new Dimension(10, ICON_WIDTH));
-		handle.addMouseListener(new DragListener(item.getItemId(), groupKeyFor(item)));
-
-		return handle;
-	}
-
-	/** @return the group key an item is currently drawn under. */
-	private String groupKeyFor(WatchedItem item)
-	{
-		if (item.isFavorite())
-			return CategoryState.FAVORITES_KEY;
-
-		final String category = item.getCategory();
-
-		if (category == null || category.trim().isEmpty())
-			return CategoryState.UNCATEGORIZED_KEY;
-
-		return lastView.getCategories().stream()
-				.filter(c -> c.getName().equals(category))
-				.findFirst()
-				.map(CategoryState::getName)
-				.orElse(CategoryState.UNCATEGORIZED_KEY);
-	}
-
-	/**
-	 * A row's quick buttons, kept together so the hover wiring can reveal and hide them
-	 * without hunting through the card's children.
-	 */
-	private static final class RowButtons
-	{
-		private final JPanel panel;
-		private final JLabel star;
-		private final JLabel overlay;
-		private final JLabel remove;
-
-		RowButtons(JPanel panel, JLabel star, JLabel overlay, JLabel remove)
-		{
-			this.panel = panel;
-			this.star = star;
-			this.overlay = overlay;
-			this.remove = remove;
-		}
-	}
-
-	/**
-	 * Builds a row's quick buttons: favourite, on-screen overlay, and remove.
-	 *
-	 * <p>They rest transparent and are revealed by {@link #installRowHover} when the pointer
-	 * enters the row. Hiding them by colour rather than by visibility keeps them occupying
-	 * their space, so a row does not resize on hover and the rows beneath it do not jump.
-	 *
-	 * @param hovered whether the row was hovered when this rebuild started, so a refresh
-	 *                under the pointer does not blank the buttons the user is aiming at
-	 */
-	private RowButtons buildRowButtons(WatchedItem item, boolean isPreview, boolean hovered)
-	{
-		final JPanel panel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
-
-		panel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-
-		if (isPreview)
-		{
-			final JButton add = smallButton("+", ADD_GREEN, "Add to watchlist");
-
-			add.addActionListener(e -> actions.addWatchedItem(WatchItemMode.WATCH, item.getItemId()));
-			panel.add(add);
-
-			return new RowButtons(panel, null, null, null);
-		}
-
-		final JLabel star = buildFavoriteStar(item, hovered);
-		final JLabel overlay = buildOverlayToggle(item, hovered);
-		final JLabel remove = iconButton("×", hovered ? REMOVE_RED : HIDDEN,
-				"Remove from the watchlist", () -> actions.removeWatchedItem(item.getItemId()));
-
-		remove.setFont(FontManager.getRunescapeSmallFont());
-
-		panel.add(star);
-		panel.add(overlay);
-		panel.add(remove);
-
-		if (reorderMode)
-			panel.add(buildCategoryButton(item));
-
-		return new RowButtons(panel, star, overlay, remove);
-	}
-
-	/**
-	 * @return the row's favourite toggle: a gold filled star when favourited, a grey outline
-	 *         when not, and nothing at all until the row is hovered
-	 */
-	private JLabel buildFavoriteStar(WatchedItem item, boolean hovered)
-	{
-		final boolean starred = item.isFavorite();
-		final Color resting = starred ? STAR_GOLD : ColorScheme.MEDIUM_GRAY_COLOR;
-
-		final JLabel star = iconButton(starred ? "★" : "☆", hovered ? resting : HIDDEN,
-				starred ? "Remove from favorites" : "Add to favorites",
-				() -> actions.setFavorite(item.getItemId(), !starred));
-
+		JLabel star = new JLabel("★", SwingConstants.CENTER);
+		star.setPreferredSize(new Dimension(20, 20));
+		star.setMaximumSize(new Dimension(20, 20));
 		star.setFont(FontManager.getRunescapeSmallFont());
-		star.putClientProperty(BUTTON_RESTING_COLOR, resting);
+		star.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		star.setToolTipText(item.isFavorite() ? "Remove from favorites" : "Add to favorites");
+		star.putClientProperty(STAR_ROW_HOVERED, false);
+		star.putClientProperty(STAR_HOVERED, false);
+		star.addMouseListener(new MouseAdapter()
+		{
+			@Override
+			public void mouseClicked(MouseEvent e)
+			{
+				if (onSetFavorite != null)
+					onSetFavorite.accept(item.getItemId(), !item.isFavorite());
+			}
+
+			@Override
+			public void mouseEntered(MouseEvent e)
+			{
+				star.putClientProperty(STAR_HOVERED, true);
+				refreshFavoriteStar(star, item.isFavorite());
+			}
+
+			@Override
+			public void mouseExited(MouseEvent e)
+			{
+				star.putClientProperty(STAR_HOVERED, false);
+				refreshFavoriteStar(star, item.isFavorite());
+			}
+		});
+
+		refreshFavoriteStar(star, item.isFavorite());
 
 		return star;
 	}
 
 	/**
-	 * @return a row's category picker, offered only while the reorganize mode is on
-	 *
-	 *         <p>It stays visible rather than hover-revealed: reorganize mode exists to
-	 *         rearrange the list, so the controls that do the rearranging should not need
-	 *         to be hunted for one row at a time.
+	 * Applies a favorite star's visual from its row-hover/star-hover client flags: hidden
+	 * when its row isn't hovered, the resting gold/grey glyph when the row is hovered, and a
+	 * preview (light-gold fill to add, or grey outline to remove) when the star itself is hovered.
 	 */
-	private JLabel buildCategoryButton(WatchedItem item)
+	private void refreshFavoriteStar(JLabel star, boolean favorite)
 	{
-		final JLabel category = new JLabel();
+		boolean rowHovered = Boolean.TRUE.equals(star.getClientProperty(STAR_ROW_HOVERED));
+		boolean starHovered = Boolean.TRUE.equals(star.getClientProperty(STAR_HOVERED));
 
-		category.setPreferredSize(new Dimension(BUTTON_SIZE, BUTTON_SIZE));
-		category.setIcon(categoriesIcon(ColorScheme.LIGHT_GRAY_COLOR));
-		category.setToolTipText("Set this item's category");
-		category.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-		category.addMouseListener(new MouseAdapter()
+		if (!rowHovered)
+		{
+			star.setText(favorite ? "★" : "☆");
+			star.setForeground(STAR_HIDDEN);
+			return;
+		}
+
+		if (starHovered)
+		{
+			star.setText(favorite ? "☆" : "★");
+			star.setForeground(favorite ? STAR_DIM : STAR_PREVIEW);
+		}
+		else
+		{
+			star.setText(favorite ? "★" : "☆");
+			star.setForeground(favorite ? COLOR_AVG : STAR_DIM);
+		}
+	}
+
+	private static final String UNCATEGORIZED_LABEL = "Uncategorized";
+	private static final String NEW_CATEGORY_LABEL = "+ New category…";
+
+	/**
+	 * Builds the per-row category picker used in the manage row: assigns the item to an existing
+	 * category, clears it to Uncategorized, or prompts to create-and-assign a new one.
+	 */
+	private JComboBox<String> buildCategoryPicker(TrackedItem item)
+	{
+		JComboBox<String> picker = new JComboBox<>();
+		picker.setFont(FontManager.getRunescapeSmallFont());
+		picker.addItem(UNCATEGORIZED_LABEL);
+		for (CategoryState cat : categories)
+			picker.addItem(cat.getName());
+
+		picker.addItem(NEW_CATEGORY_LABEL);
+
+		final String current = item.getCategory();
+		final String currentSelection = current == null || current.isEmpty() ? UNCATEGORIZED_LABEL : current;
+		picker.setSelectedItem(currentSelection);
+
+		picker.addActionListener(e ->
+		{
+			String selected = (String) picker.getSelectedItem();
+			if (selected == null || selected.equals(currentSelection))
+				return;
+
+			if (NEW_CATEGORY_LABEL.equals(selected))
+			{
+				String name = JOptionPane.showInputDialog(this, "New category name:",
+						"New Category", JOptionPane.PLAIN_MESSAGE);
+				if (name != null && !name.trim().isEmpty())
+				{
+					categoryActions.create(name.trim());
+					categoryActions.setItemCategory(item.getItemId(), name.trim());
+				}
+				else
+				{
+					picker.setSelectedItem(currentSelection);
+				}
+
+				return;
+			}
+
+			categoryActions.setItemCategory(item.getItemId(),
+					UNCATEGORIZED_LABEL.equals(selected) ? null : selected);
+		});
+
+		return picker;
+	}
+
+	/**
+	 * Opens the modal Manage Categories dialog: create, rename, delete, and reorder categories.
+	 * Each action updates the dialog's list immediately and forwards to the plugin via
+	 * {@link #categoryActions}, which persists and rebuilds the panel.
+	 */
+	private void openManageCategoriesDialog()
+	{
+		JDialog dialog = new JDialog(SwingUtilities.getWindowAncestor(this), "Manage Categories");
+		dialog.setModal(true);
+
+		DefaultListModel<String> model = new DefaultListModel<>();
+		for (CategoryState cat : categories)
+			model.addElement(cat.getName());
+
+		JList<String> list = new JList<>(model);
+		list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+
+		JButton newBtn = new JButton("New");
+		newBtn.addActionListener(e ->
+		{
+			String name = JOptionPane.showInputDialog(dialog, "Category name:",
+					"New Category", JOptionPane.PLAIN_MESSAGE);
+			if (name == null || name.trim().isEmpty())
+				return;
+
+			String trimmed = name.trim();
+			if (containsIgnoreCase(model, trimmed))
+				return;
+
+			model.addElement(trimmed);
+			categoryActions.create(trimmed);
+		});
+
+		JButton renameBtn = new JButton("Rename");
+		renameBtn.addActionListener(e ->
+		{
+			int i = list.getSelectedIndex();
+			if (i < 0)
+				return;
+
+			String old = model.get(i);
+			Object input = JOptionPane.showInputDialog(dialog, "Rename category:",
+					"Rename", JOptionPane.PLAIN_MESSAGE, null, null, old);
+			if (input == null || input.toString().trim().isEmpty())
+				return;
+
+			String trimmed = input.toString().trim();
+			if (trimmed.equals(old) || containsIgnoreCase(model, trimmed))
+				return;
+
+			model.set(i, trimmed);
+			categoryActions.rename(old, trimmed);
+		});
+
+		JButton deleteBtn = new JButton("Delete");
+		deleteBtn.addActionListener(e ->
+		{
+			int i = list.getSelectedIndex();
+			if (i < 0)
+				return;
+
+			String name = model.get(i);
+			int choice = JOptionPane.showConfirmDialog(dialog,
+					"Delete category \"" + name + "\"? Its items move to Uncategorized.",
+					"Delete Category", JOptionPane.YES_NO_OPTION);
+			if (choice == JOptionPane.YES_OPTION)
+			{
+				model.remove(i);
+				categoryActions.delete(name);
+			}
+		});
+
+		JButton upBtn = new JButton("↑");
+		upBtn.addActionListener(e -> moveCategoryInDialog(list, model, -1));
+
+		JButton downBtn = new JButton("↓");
+		downBtn.addActionListener(e -> moveCategoryInDialog(list, model, 1));
+
+		JButton autoBtn = new JButton("Auto");
+		autoBtn.setToolTipText("Auto-categorize tracked items by their characteristics");
+		autoBtn.addActionListener(e -> autoCategorizeFromDialog(dialog));
+
+		JPanel actions = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 4));
+		actions.add(newBtn);
+		actions.add(renameBtn);
+		actions.add(deleteBtn);
+		actions.add(upBtn);
+		actions.add(downBtn);
+		actions.add(autoBtn);
+
+		JScrollPane scroll = new JScrollPane(list);
+		scroll.setPreferredSize(new Dimension(220, 200));
+
+		JPanel content = new JPanel(new BorderLayout(0, 6));
+		content.setBorder(new EmptyBorder(8, 8, 8, 8));
+		content.add(scroll, BorderLayout.CENTER);
+		content.add(actions, BorderLayout.SOUTH);
+
+		dialog.setContentPane(content);
+		dialog.pack();
+		dialog.setLocationRelativeTo(this);
+		dialog.setVisible(true);
+	}
+
+	/**
+	 * Prompts for the auto-categorize scope (uncategorized only vs. everything), runs it via
+	 * {@link #categoryActions}, reports the result, and closes the dialog so it reopens with the
+	 * freshly generated categories.
+	 */
+	private void autoCategorizeFromDialog(JDialog dialog)
+	{
+		Object[] options = {"Only uncategorized", "Re-categorize all", "Cancel"};
+		int choice = JOptionPane.showOptionDialog(dialog,
+				"Assign tracked items to categories from the wiki's item groupings?\n"
+						+ "\"Only uncategorized\" keeps your manual assignments.",
+				"Auto-categorize", JOptionPane.DEFAULT_OPTION, JOptionPane.QUESTION_MESSAGE,
+				null, options, options[0]);
+		if (choice != 0 && choice != 1)
+			return;
+
+		String result = categoryActions.autoCategorize(choice == 1);
+		JOptionPane.showMessageDialog(dialog, result, "Auto-categorize", JOptionPane.INFORMATION_MESSAGE);
+		dialog.dispose();
+	}
+
+	/** Moves the selected dialog category by {@code delta} and forwards the new index to the plugin. */
+	private void moveCategoryInDialog(JList<String> list, DefaultListModel<String> model, int delta)
+	{
+		int i = list.getSelectedIndex();
+		if (i < 0)
+			return;
+
+		int j = i + delta;
+		if (j < 0 || j >= model.size())
+			return;
+
+		String name = model.remove(i);
+		model.add(j, name);
+		list.setSelectedIndex(j);
+		categoryActions.reorder(name, j);
+	}
+
+	/** @return whether the list model already contains {@code value}, ignoring case. */
+	private static boolean containsIgnoreCase(DefaultListModel<String> model, String value)
+	{
+		for (int i = 0; i < model.size(); i++)
+			if (model.get(i).equalsIgnoreCase(value))
+				return true;
+
+		return false;
+	}
+
+	/** Builds an 18px item-icon label backed by {@link #rowIconCache}, loading asynchronously on a miss. */
+	private JLabel buildRowIcon(TrackedItem item)
+	{
+		JLabel iconLabel = new JLabel();
+		iconLabel.setVerticalAlignment(SwingConstants.CENTER);
+		iconLabel.setHorizontalAlignment(SwingConstants.CENTER);
+		applyRowIcon(iconLabel, item);
+		return iconLabel;
+	}
+
+	/** Sets a label's 18px quantity-aware item icon from {@link #rowIconCache}, loading asynchronously on a miss. */
+	private void applyRowIcon(JLabel iconLabel, TrackedItem item)
+	{
+		long key = iconCacheKey(item);
+		ImageIcon cached = rowIconCache.get(key);
+		if (cached != null)
+		{
+			iconLabel.setIcon(cached);
+			return;
+		}
+
+		AsyncBufferedImage icon = itemManager.getImage(item.getItemId(), item.iconStackSize(), item.isStackable());
+		icon.onLoaded(() ->
+		{
+			ImageIcon scaled = new ImageIcon(icon.getScaledInstance(18, 18, Image.SCALE_SMOOTH));
+			rowIconCache.put(key, scaled);
+			iconLabel.setIcon(scaled);
+		});
+	}
+
+	/** @return a {@link #rowIconCache} key combining an item's id with the stack size its icon is rendered at. */
+	private static long iconCacheKey(TrackedItem item)
+	{
+		return ((long) item.getItemId() << 32) | (item.iconStackSize() & 0xffffffffL);
+	}
+
+	/**
+	 * Builds the dedicated manage-mode row: a stripped-down layout showing only what's needed to
+	 * organise items. A left column of reorder controls (up/down, plus drag when ungrouped), a
+	 * middle column with the icon+name over a category picker, and a right column with the
+	 * always-visible remove and favorite controls. All price/quantity/profit content is omitted.
+	 */
+	private JPanel buildManageRow(TrackedItem item, List<TrackedItem> groupItems)
+	{
+		JPanel card = new JPanel(new BorderLayout(6, 0))
+		{
+			@Override
+			public Dimension getMaximumSize()
+			{
+				return new Dimension(Integer.MAX_VALUE, getPreferredSize().height);
+			}
+		};
+		card.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		card.setBorder(new EmptyBorder(6, 8, 6, 8));
+		card.putClientProperty(ROW_ITEM_ID, item.getItemId());
+
+		card.add(buildReorderStrip(item, groupItems), BorderLayout.WEST);
+
+		JLabel nameLabel = new JLabel();
+		nameLabel.setForeground(Color.WHITE);
+		nameLabel.setFont(FontManager.getRunescapeBoldFont());
+		EllipsisText.set(nameLabel, item.getName());
+
+		JPanel nameRow = new JPanel(new BorderLayout(6, 0));
+		nameRow.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		nameRow.add(buildRowIcon(item), BorderLayout.WEST);
+		nameRow.add(nameLabel, BorderLayout.CENTER);
+
+		JPanel center = new JPanel();
+		center.setLayout(new BoxLayout(center, BoxLayout.Y_AXIS));
+		center.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		nameRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+		JComboBox<String> picker = buildCategoryPicker(item);
+		picker.setAlignmentX(Component.LEFT_ALIGNMENT);
+		center.add(nameRow);
+		center.add(Box.createVerticalStrut(4));
+		center.add(picker);
+		card.add(center, BorderLayout.CENTER);
+
+		card.add(buildManageEastControls(item), BorderLayout.EAST);
+
+		return card;
+	}
+
+	/** Builds the left reorder column (up/down, plus a drag handle when the list isn't grouped) for the manage row. */
+	private JPanel buildReorderStrip(TrackedItem item, List<TrackedItem> groupItems)
+	{
+		final Color controlColor = PricewatchColors.MUTED;
+		final Color controlDim = DIVIDER_COLOR;
+
+		final int groupPos = indexOfItem(groupItems, item.getItemId());
+		final boolean canUp = groupPos > 0;
+		final boolean canDown = groupPos >= 0 && groupPos < groupItems.size() - 1;
+		final int upTarget = canUp ? orderedItemIds.indexOf(groupItems.get(groupPos - 1).getItemId()) : -1;
+		final int downTarget = canDown ? orderedItemIds.indexOf(groupItems.get(groupPos + 1).getItemId()) : -1;
+
+		JButton upBtn = makeRowControl("▲", "Move up");
+		upBtn.setForeground(canUp ? controlColor : controlDim);
+		upBtn.addActionListener(e ->
+		{
+			if (canUp && upTarget >= 0 && onReorder != null)
+				onReorder.accept(item.getItemId(), upTarget);
+		});
+
+		JButton downBtn = makeRowControl("▼", "Move down");
+		downBtn.setForeground(canDown ? controlColor : controlDim);
+		downBtn.addActionListener(e ->
+		{
+			if (canDown && downTarget >= 0 && onReorder != null)
+				onReorder.accept(item.getItemId(), downTarget);
+		});
+
+		JLabel dragHandle = new JLabel("≡", SwingConstants.CENTER);
+		dragHandle.setPreferredSize(new Dimension(20, 20));
+		dragHandle.setForeground(controlColor);
+		dragHandle.setFont(FontManager.getRunescapeSmallFont());
+		dragHandle.setCursor(Cursor.getPredefinedCursor(Cursor.MOVE_CURSOR));
+		dragHandle.setToolTipText("Drag to reorder");
+		installDragHandle(dragHandle, item.getItemId());
+
+		JPanel strip = new JPanel();
+		strip.setLayout(new BoxLayout(strip, BoxLayout.Y_AXIS));
+		strip.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		strip.setBorder(new EmptyBorder(0, 0, 0, 6));
+		upBtn.setAlignmentX(Component.CENTER_ALIGNMENT);
+		downBtn.setAlignmentX(Component.CENTER_ALIGNMENT);
+		dragHandle.setAlignmentX(Component.CENTER_ALIGNMENT);
+		strip.add(Box.createVerticalGlue());
+		strip.add(upBtn);
+		strip.add(dragHandle);
+		strip.add(downBtn);
+		strip.add(Box.createVerticalGlue());
+
+		return strip;
+	}
+
+	/** Builds the right column of the manage row: an always-visible remove button stacked over a favorite star. */
+	private JPanel buildManageEastControls(TrackedItem item)
+	{
+		JButton removeBtn = new JButton("✕");
+		removeBtn.setPreferredSize(new Dimension(20, 20));
+		removeBtn.setMaximumSize(new Dimension(20, 20));
+		removeBtn.setMargin(new Insets(0, 0, 0, 0));
+		removeBtn.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		removeBtn.setForeground(REMOVE_COLOR);
+		removeBtn.setFont(FontManager.getRunescapeSmallFont());
+		removeBtn.setFocusPainted(false);
+		removeBtn.setBorderPainted(false);
+		removeBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		removeBtn.setToolTipText("Remove from tracking");
+		removeBtn.setAlignmentX(Component.CENTER_ALIGNMENT);
+		removeBtn.addActionListener(e -> onRemoveItem.accept(item.getItemId()));
+
+		JLabel star = new JLabel(item.isFavorite() ? "★" : "☆", SwingConstants.CENTER);
+		star.setPreferredSize(new Dimension(20, 20));
+		star.setMaximumSize(new Dimension(20, 20));
+		star.setAlignmentX(Component.CENTER_ALIGNMENT);
+		star.setFont(FontManager.getRunescapeSmallFont());
+		star.setForeground(item.isFavorite() ? COLOR_AVG : STAR_DIM);
+		star.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		star.setToolTipText(item.isFavorite() ? "Remove from favorites" : "Add to favorites");
+		star.addMouseListener(new MouseAdapter()
 		{
 			@Override
 			public void mouseClicked(MouseEvent e)
 			{
-				showCategoryMenu(category, item);
+				if (onSetFavorite != null)
+					onSetFavorite.accept(item.getItemId(), !item.isFavorite());
+			}
+
+			@Override
+			public void mouseEntered(MouseEvent e)
+			{
+				star.setText(item.isFavorite() ? "☆" : "★");
+				star.setForeground(item.isFavorite() ? STAR_DIM : STAR_PREVIEW);
+			}
+
+			@Override
+			public void mouseExited(MouseEvent e)
+			{
+				star.setText(item.isFavorite() ? "★" : "☆");
+				star.setForeground(item.isFavorite() ? COLOR_AVG : STAR_DIM);
 			}
 		});
 
-		return category;
+		JPanel east = new JPanel();
+		east.setLayout(new BoxLayout(east, BoxLayout.Y_AXIS));
+		east.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		east.add(removeBtn);
+		east.add(Box.createVerticalStrut(4));
+		east.add(star);
+
+		if (config.showScreenOverlay())
+		{
+			east.add(Box.createVerticalStrut(4));
+			east.add(buildOverlayToggle(item));
+		}
+
+		return east;
 	}
 
 	/**
-	 * Builds a row's on-screen overlay toggle, painted as a small monitor to match Stockpile.
-	 *
-	 * @return the toggle, inert once the overlay is full with the reason in its tooltip — the
-	 *         plugin would ignore the click anyway, and a button that silently does nothing is
-	 *         worse than one that says why
+	 * Builds the overlay-select control beneath the favorite star: a painted monitor icon that
+	 * toggles whether the item appears in the on-screen overlay. Gold when selected, and disabled
+	 * (greyed) once {@link PricewatchPlugin#OVERLAY_MAX} items are selected and this isn't one.
 	 */
-	private JLabel buildOverlayToggle(WatchedItem item, boolean hovered)
+	private JLabel buildOverlayToggle(TrackedItem item)
 	{
-		final boolean on = item.isOnOverlay();
-		final boolean full = !on && overlayCount() >= PricewatchPlugin.OVERLAY_MAX;
-		final Color resting = full
-				? ColorScheme.DARK_GRAY_COLOR
-				: (on ? OVERLAY_ON : ColorScheme.MEDIUM_GRAY_COLOR);
+		boolean on = item.isOnOverlay();
+		boolean atCap = !on && overlayCount() >= PricewatchPlugin.OVERLAY_MAX;
 
-		final JLabel toggle = iconButton(null, hovered ? resting : HIDDEN,
-				overlayTooltip(on, full),
-				full ? null : () -> actions.setOnOverlay(item.getItemId(), !on));
+		final Color restColor = on ? COLOR_AVG : (atCap ? DIVIDER_COLOR : STAR_DIM);
+		final Color hoverColor = on ? STAR_DIM : COLOR_AVG;
 
-		toggle.putClientProperty(BUTTON_RESTING_COLOR, resting);
-		toggle.putClientProperty(BUTTON_IS_ICON, true);
-		toggle.setIcon(overlayIcon(hovered ? resting : HIDDEN));
+		JLabel toggle = new JLabel(overlayIcon(restColor));
+		toggle.setAlignmentX(Component.CENTER_ALIGNMENT);
+		toggle.setToolTipText(on
+				? "Remove from on-screen overlay"
+				: atCap
+						? "Overlay is full (" + PricewatchPlugin.OVERLAY_MAX + " max)"
+						: "Show on the on-screen overlay");
+
+		if (!atCap)
+		{
+			toggle.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+			toggle.addMouseListener(new MouseAdapter()
+			{
+				@Override
+				public void mouseClicked(MouseEvent e)
+				{
+					if (onSetOnOverlay != null)
+						onSetOnOverlay.accept(item.getItemId(), !item.isOnOverlay());
+				}
+
+				@Override
+				public void mouseEntered(MouseEvent e)
+				{
+					toggle.setIcon(overlayIcon(hoverColor));
+				}
+
+				@Override
+				public void mouseExited(MouseEvent e)
+				{
+					toggle.setIcon(overlayIcon(restColor));
+				}
+			});
+		}
 
 		return toggle;
 	}
 
-	/**
-	 * @param text   the glyph to draw, or {@code null} for a button that carries a painted icon
-	 * @param colour the colour to start in, which is {@link #HIDDEN} for a row that is not hovered
-	 * @param onClick the action, or {@code null} for an inert button
-	 * @return a borderless label styled as a small clickable button
-	 */
-	private static JLabel iconButton(String text, Color colour, String tooltip, Runnable onClick)
+	/** @return how many currently tracked items are flagged for the on-screen overlay. */
+	private int overlayCount()
 	{
-		final JLabel button = new JLabel(text == null ? "" : text, SwingConstants.CENTER);
+		int count = 0;
+		for (TrackedItem item : currentItems.values())
+			if (item.isOnOverlay())
+				count++;
 
-		button.setPreferredSize(new Dimension(BUTTON_SIZE, BUTTON_SIZE));
-		button.setForeground(colour);
-		button.setToolTipText(tooltip);
+		return count;
+	}
 
-		if (onClick == null)
-			return button;
+	/**
+	 * Builds one row of the main list for a tracked item: icon, name, quantity,
+	 * the configured data rows (prices/value/volume/profit), hover affordances,
+	 * and a click handler that opens the item's detail view.
+	 */
+	private JPanel buildTrackedItemRow(TrackedItem item, PriceIndicatorMode indicatorMode,
+			List<TrackedItem> groupItems)
+	{
+		if (reorderMode)
+			return buildManageRow(item, groupItems);
 
-		button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-		button.addMouseListener(new MouseAdapter()
+		final PriceIndicatorMode itemIndicatorMode = item.isHasDeltas() ? indicatorMode : PriceIndicatorMode.OFF;
+		final boolean hovered = item.getItemId() == hoveredItemId;
+		final List<TimeWindow> rowWindows = Arrays.asList(config.row1Data(), config.row2Data(), config.row3Data());
+		final boolean showColHigh = config.showColHigh();
+		final boolean showColLow = config.showColLow();
+		final boolean showColAvg = config.showColAvg();
+		final boolean showColVolume = config.showColVolume();
+		final boolean showQty = config.showQuantityValue();
+		JPanel card = new JPanel(new BorderLayout(0, 0))
 		{
 			@Override
-			public void mouseClicked(MouseEvent e)
+			public Dimension getMaximumSize()
 			{
-				onClick.run();
+				return new Dimension(Integer.MAX_VALUE, getPreferredSize().height);
 			}
-		});
+		};
+		card.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		card.setBorder(new EmptyBorder(6, 8, 6, 8));
+		card.putClientProperty(ROW_ITEM_ID, item.getItemId());
 
-		return button;
-	}
+		JLabel iconLabel = new JLabel();
+		iconLabel.setVerticalAlignment(SwingConstants.CENTER);
+		iconLabel.setHorizontalAlignment(SwingConstants.CENTER);
+		applyRowIcon(iconLabel, item);
 
-	/** Paints a small monochrome monitor, the on-screen overlay's icon, in the given colour. */
-	private static Icon overlayIcon(Color color)
-	{
-		final int size = 16;
-		final BufferedImage img = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
-		final Graphics2D g = img.createGraphics();
+		JButton removeBtn = new JButton("✕");
+		removeBtn.setPreferredSize(new Dimension(20, 20));
+		removeBtn.setMargin(new Insets(0, 0, 0, 0));
+		removeBtn.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		removeBtn.setForeground(hovered ? REMOVE_COLOR : STAR_HIDDEN);
+		removeBtn.setFont(FontManager.getRunescapeSmallFont());
+		removeBtn.setFocusPainted(false);
+		removeBtn.setBorderPainted(false);
+		removeBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		removeBtn.setToolTipText("Remove from tracking");
+		removeBtn.addActionListener(e -> onRemoveItem.accept(item.getItemId()));
 
-		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-		g.setColor(color);
-		g.drawRect(2, 2, size - 5, size - 8);
-		g.fillRect(size / 2 - 2, size - 5, 4, 2);
-		g.fillRect(size / 2 - 4, size - 3, 8, 1);
-		g.dispose();
+		JLabel favStar = buildFavoriteStar(item);
+		removeBtn.setAlignmentX(Component.CENTER_ALIGNMENT);
+		favStar.setAlignmentX(Component.CENTER_ALIGNMENT);
 
-		return new ImageIcon(img);
+		final JLabel overlayBtn = config.showScreenOverlay() ? buildOverlayToggle(item) : null;
+
+		JPanel eastPanel = new JPanel()
+		{
+			/**
+			 * Reserves the hidden overlay button's height so revealing it on hover changes only
+			 * appearance, not layout size. Without this a short row (e.g. a non-tradeable item)
+			 * grows on hover and shifts the rows beneath it.
+			 */
+			@Override
+			public Dimension getPreferredSize()
+			{
+				Dimension d = super.getPreferredSize();
+				if (overlayBtn != null && !overlayBtn.isVisible())
+					d.height += overlayBtn.getPreferredSize().height;
+
+				return d;
+			}
+		};
+		eastPanel.setLayout(new BoxLayout(eastPanel, BoxLayout.Y_AXIS));
+		eastPanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		eastPanel.add(removeBtn);
+		eastPanel.add(favStar);
+		if (overlayBtn != null)
+		{
+			overlayBtn.setAlignmentX(Component.CENTER_ALIGNMENT);
+			overlayBtn.setVisible(false);
+			eastPanel.add(overlayBtn);
+		}
+
+		card.add(eastPanel, BorderLayout.EAST);
+
+		JPanel centerPanel = new JPanel();
+		centerPanel.setLayout(new BoxLayout(centerPanel, BoxLayout.Y_AXIS));
+		centerPanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+
+		JLabel nameLabel = new JLabel();
+		nameLabel.setForeground(Color.WHITE);
+		nameLabel.setFont(FontManager.getRunescapeBoldFont());
+		EllipsisText.set(nameLabel, item.getName());
+
+		JLabel qtyLabel = new JLabel("Qty: " + GpFormat.shortValue(item.getQuantity()));
+		qtyLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		qtyLabel.setFont(FontManager.getRunescapeSmallFont());
+		qtyLabel.setToolTipText(NUMBER_FORMAT.format(item.getQuantity()));
+
+		JPanel nameRow = new JPanel(new BorderLayout(6, 0));
+		nameRow.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		nameRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+		nameRow.add(iconLabel, BorderLayout.WEST);
+		nameRow.add(nameLabel, BorderLayout.CENTER);
+
+		if (showQty)
+			nameRow.add(qtyLabel, BorderLayout.EAST);
+
+		centerPanel.add(nameRow);
+
+		if (config.compactView())
+		{
+			centerPanel.add(buildCompactValueRow(item));
+			card.add(centerPanel, BorderLayout.CENTER);
+			installRowHover(card, item, removeBtn, favStar, overlayBtn, REMOVE_COLOR, STAR_HIDDEN);
+			return card;
+		}
+
+		final JLabel highLabel;
+		final JLabel lowLabel;
+		final JLabel avgLabel;
+
+		if (!item.hasPrices())
+		{
+			final JLabel loading;
+			if (!item.isTradeable())
+			{
+				loading = new JLabel("Item not tradeable");
+				loading.setForeground(PricewatchColors.MUTED);
+			}
+			else if (item.isPriceLoadFailed())
+			{
+				loading = new JLabel("Unable to load price");
+				loading.setForeground(COLOR_LOW);
+			}
+			else
+			{
+				loading = new JLabel("Prices loading...");
+				loading.setForeground(LOADING_COLOR);
+				loadingLabels.add(loading);
+			}
+
+			loading.setFont(FontManager.getRunescapeSmallFont());
+
+			JPanel loadingRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 3));
+			loadingRow.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+			loadingRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+			loadingRow.add(loading);
+			centerPanel.add(loadingRow);
+			highLabel = null;
+			lowLabel = null;
+			avgLabel = null;
+		}
+		else
+		{
+			JPanel pricesPanel = new JPanel(new GridBagLayout());
+			pricesPanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+			pricesPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+			pricesPanel.setBorder(new EmptyBorder(0, PRICES_LEFT_PAD, 0, PRICES_RIGHT_PAD));
+
+			GridBagConstraints c = new GridBagConstraints();
+			c.fill = GridBagConstraints.HORIZONTAL;
+			c.insets = new Insets(1, 0, 1, 4);
+
+			int gridy = 0;
+			for (TimeWindow window : rowWindows)
+			{
+				if (window == TimeWindow.NONE)
+					continue;
+
+				PriceStats stats = item.getWindowStats().get(window);
+				long h, l, a, vol;
+				if (window == TimeWindow.LIVE || stats == null)
+				{
+					h = item.getHighPrice();
+					l = item.getLowPrice();
+					a = item.getAvgPrice();
+					vol = stats != null ? stats.getVolume() : 0;
+				}
+				else
+				{
+					h = stats.getHigh();
+					l = stats.getLow();
+					a = stats.getAvg();
+					vol = stats.getVolume();
+				}
+
+				boolean isLive = window == TimeWindow.LIVE;
+
+				JLabel windowLbl = new JLabel(window.toString());
+				windowLbl.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+				windowLbl.setFont(FontManager.getRunescapeSmallFont());
+				if (isLive)
+					windowLbl.setToolTipText("Buy: " + formatAge(item.getLatestHighTime())
+							+ ", Sell: " + formatAge(item.getLatestLowTime()));
+
+				c.gridx = 0;
+				c.gridy = gridy;
+				c.weightx = 0;
+				c.anchor = GridBagConstraints.WEST;
+				pricesPanel.add(windowLbl, c);
+
+				List<JLabel> visibleCells = new ArrayList<>(4);
+				if (showColHigh)
+				{
+					JLabel cell = new JLabel("", SwingConstants.CENTER);
+					cell.setFont(FontManager.getRunescapeSmallFont());
+					cell.setForeground(COLOR_HIGH);
+					installItemValue(cell, h, "", "High", TINT_HIGH);
+					if (isLive)
+						applyLiveStaleness(cell, h, "High", "Last Buy", item.getLatestHighTime(),
+								COLOR_HIGH, COLOR_HIGH_STALE);
+
+					visibleCells.add(cell);
+				}
+
+				if (showColLow)
+				{
+					JLabel cell = new JLabel("", SwingConstants.CENTER);
+					cell.setFont(FontManager.getRunescapeSmallFont());
+					cell.setForeground(COLOR_LOW);
+					installItemValue(cell, l, "", "Low", TINT_LOW);
+					if (isLive)
+						applyLiveStaleness(cell, l, "Low", "Last Sell", item.getLatestLowTime(),
+								COLOR_LOW, COLOR_LOW_STALE);
+
+					visibleCells.add(cell);
+				}
+
+				if (showColAvg)
+				{
+					JLabel cell = new JLabel("", SwingConstants.CENTER);
+					cell.setFont(FontManager.getRunescapeSmallFont());
+					cell.setForeground(COLOR_AVG);
+					installItemValue(cell, a, "", "Avg", TINT_AVG);
+					visibleCells.add(cell);
+				}
+
+				if (showColVolume)
+				{
+					JLabel cell = new JLabel("", SwingConstants.CENTER);
+					cell.setForeground(COLOR_VOLUME);
+					cell.setFont(FontManager.getRunescapeSmallFont());
+					String volText = window == TimeWindow.LIVE ? "-" : GpFormat.shortValue(vol);
+					cell.setText(volText);
+					if (window != TimeWindow.LIVE)
+						cell.setToolTipText("Volume: " + NUMBER_FORMAT.format(vol));
+
+					HoverTintListener volListener = new HoverTintListener(cell, volText, TINT_VOLUME);
+					cell.addMouseListener(volListener);
+					SwingUtilities.invokeLater(volListener::applyIfHovered);
+					visibleCells.add(cell);
+				}
+
+				int col = 1;
+				for (JLabel cell : visibleCells)
+				{
+					c.gridx = col++;
+					c.weightx = 1;
+					c.anchor = GridBagConstraints.CENTER;
+					pricesPanel.add(cell, c);
+				}
+
+				JLabel pulse = createDeltaLabel();
+				if (itemIndicatorMode != PriceIndicatorMode.OFF)
+					pulseIfShown(pulse, item.getAvgDelta(), itemIndicatorMode);
+
+				c.gridx = col++;
+				c.weightx = 0;
+				c.anchor = GridBagConstraints.WEST;
+				pricesPanel.add(pulse, c);
+
+				for (int i = visibleCells.size(); i < 4; i++)
+				{
+					c.gridx = col++;
+					c.weightx = 1;
+					c.anchor = GridBagConstraints.CENTER;
+					pricesPanel.add(new JLabel(), c);
+				}
+
+				gridy++;
+			}
+
+			highLabel = null;
+			lowLabel = null;
+			avgLabel = null;
+
+			centerPanel.add(pricesPanel);
+
+			if (config.showItemProfitRow()
+					&& item.isCostBasisInitialized() && item.hasPrices())
+			{
+				long itemProfit = item.getProfitAt(item.getAvgPrice());
+				String sign = itemProfit > 0 ? "+" : "";
+				ValueFormat fmt = config.geEstimatesFormat();
+
+				JLabel itemProfitPrefix = new JLabel("Est. Profit:");
+				itemProfitPrefix.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+				itemProfitPrefix.setFont(FontManager.getRunescapeSmallFont());
+				itemProfitPrefix.setToolTipText("Realized profit from sold lots plus unrealized "
+						+ "gain/loss on held lots (marked to the current average price)");
+
+				JLabel itemProfitValue = new JLabel(sign + formatTotalGp(itemProfit, fmt));
+				itemProfitValue.setFont(FontManager.getRunescapeSmallFont());
+				itemProfitValue.setForeground(itemProfit == 0 ? ColorScheme.LIGHT_GRAY_COLOR
+						: (itemProfit > 0 ? COLOR_HIGH : COLOR_LOW));
+				applyTotalTooltip(itemProfitValue, itemProfit, fmt);
+
+				JPanel itemProfitRow = new JPanel(new BorderLayout(6, 0));
+				itemProfitRow.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+				itemProfitRow.add(itemProfitPrefix, BorderLayout.WEST);
+				itemProfitRow.add(itemProfitValue, BorderLayout.CENTER);
+
+				JPanel itemProfitSection = new JPanel(new BorderLayout());
+				itemProfitSection.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+				itemProfitSection.setAlignmentX(Component.LEFT_ALIGNMENT);
+				itemProfitSection.setBorder(BorderFactory.createCompoundBorder(
+						BorderFactory.createCompoundBorder(
+								new EmptyBorder(4, 0, 0, 0),
+								new MatteBorder(1, 0, 0, 0, DIVIDER_COLOR)
+						),
+						new EmptyBorder(4, 10, 0, 0)
+				));
+				itemProfitSection.add(itemProfitRow, BorderLayout.CENTER);
+				centerPanel.add(itemProfitSection);
+			}
+		}
+
+		card.add(centerPanel, BorderLayout.CENTER);
+		installRowHover(card, item, removeBtn, favStar, overlayBtn, REMOVE_COLOR, STAR_HIDDEN);
+
+		return card;
 	}
 
 	/**
-	 * Wires a row's shared hover behaviour: entering reveals the quick buttons and records the
-	 * row as hovered, leaving hides them again, and a click anywhere that is not one of those
-	 * buttons opens the item's detail view.
-	 *
-	 * <p>The listener is added to every descendant, not just the card. Child labels that carry
-	 * a tooltip register with {@code ToolTipManager} and so consume mouse events, which is why
-	 * a listener on the card alone never saw the click.
+	 * Wires the shared row hover behaviour onto a tracked-item card: clicking the row
+	 * (other than the remove button, favorite star, or overlay button) opens the detail view,
+	 * and entering/leaving the card tracks {@link #hoveredItemId} and reveals/hides the remove
+	 * button, favorite star, and the (optional) overlay-select button.
 	 */
-	private void installRowHover(JPanel card, WatchedItem item, RowButtons buttons)
+	private void installRowHover(JPanel card, TrackedItem item, JButton removeBtn, JLabel favStar,
+			JLabel overlayBtn, Color removeColor, Color removeHidden)
 	{
 		card.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-
-		final MouseAdapter hover = new MouseAdapter()
+		MouseAdapter hoverListener = new MouseAdapter()
 		{
 			@Override
 			public void mouseClicked(MouseEvent e)
 			{
-				if (e.getSource() == buttons.star || e.getSource() == buttons.overlay
-						|| e.getSource() == buttons.remove)
+				if (e.getSource() == removeBtn || e.getSource() == favStar || e.getSource() == overlayBtn)
 					return;
 
-				openDetail(item.getItemId());
+				showDetail(item.getItemId());
 			}
 
 			@Override
 			public void mouseEntered(MouseEvent e)
 			{
 				hoveredItemId = item.getItemId();
-				showRowButtons(buttons, true);
+				removeBtn.setForeground(removeColor);
+				favStar.putClientProperty(STAR_ROW_HOVERED, true);
+				refreshFavoriteStar(favStar, item.isFavorite());
+				if (overlayBtn != null)
+					overlayBtn.setVisible(true);
 			}
 
 			@Override
 			public void mouseExited(MouseEvent e)
 			{
-				final Point p = SwingUtilities.convertPoint((Component) e.getSource(), e.getPoint(), card);
+				Point p = SwingUtilities.convertPoint((Component) e.getSource(), e.getPoint(), card);
+				if (!card.contains(p))
+				{
+					if (hoveredItemId == item.getItemId())
+						hoveredItemId = -1;
 
-				if (card.contains(p))
-					return;
-
-				if (hoveredItemId == item.getItemId())
-					hoveredItemId = -1;
-
-				showRowButtons(buttons, false);
+					removeBtn.setForeground(removeHidden);
+					favStar.putClientProperty(STAR_ROW_HOVERED, false);
+					favStar.putClientProperty(STAR_HOVERED, false);
+					refreshFavoriteStar(favStar, item.isFavorite());
+					if (overlayBtn != null)
+						overlayBtn.setVisible(false);
+				}
 			}
 		};
-
-		addListenerRecursively(card, hover);
+		addListenerRecursively(card, hoverListener);
 	}
 
-	/** Reveals or hides a row's quick buttons by swapping each between its resting colour and transparent. */
-	private static void showRowButtons(RowButtons buttons, boolean show)
+	/**
+	 * Builds the compact-view row-2 value line: {@code total value (single item value)}, both
+	 * in short format and both derived from the latest avg-of-1 price (e.g. {@code 4.86m (1.62m)}).
+	 * Falls back to a muted placeholder when the item has no prices.
+	 */
+	private JPanel buildCompactValueRow(TrackedItem item)
 	{
-		Stream.of(buttons.star, buttons.overlay, buttons.remove)
-				.filter(Objects::nonNull)
-				.forEach(button -> paintRowButton(button, show));
-	}
+		JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+		row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		row.setAlignmentX(Component.LEFT_ALIGNMENT);
+		row.setBorder(new EmptyBorder(2, 4, 0, 0));
 
-	/** Applies one quick button's revealed or hidden colour, to its icon when it carries one. */
-	private static void paintRowButton(JLabel button, boolean show)
-	{
-		final Object resting = button.getClientProperty(BUTTON_RESTING_COLOR);
-		final Color colour = show && resting instanceof Color ? (Color) resting : HIDDEN;
-
-		button.setForeground(colour);
-
-		if (Boolean.TRUE.equals(button.getClientProperty(BUTTON_IS_ICON)))
-			button.setIcon(overlayIcon(colour));
-	}
-
-	/** Adds a listener to a component and every descendant beneath it. */
-	private static void addListenerRecursively(Component component, MouseAdapter listener)
-	{
-		component.addMouseListener(listener);
-
-		if (!(component instanceof Container))
-			return;
-
-		for (Component child : ((Container) component).getComponents())
-			addListenerRecursively(child, listener);
-	}
-
-	/** @return the overlay toggle's tooltip for its current state. */
-	private static String overlayTooltip(boolean on, boolean full)
-	{
-		if (on)
-			return "Remove from the on-screen overlay";
-
-		if (full)
-			return "The on-screen overlay is full (" + PricewatchPlugin.OVERLAY_MAX + " items)";
-
-		return "Show on the on-screen overlay";
-	}
-
-	/** @return how many watched items are currently flagged onto the overlay. */
-	private long overlayCount()
-	{
-		return lastItems.stream()
-				.filter(WatchedItem::isOnOverlay)
-				.count();
-	}
-
-	/** Opens the per-item category picker, with a way into the manage dialog. */
-	private void showCategoryMenu(Component anchor, WatchedItem item)
-	{
-		final JPopupMenu menu = new JPopupMenu();
-		final JMenuItem clear = new JMenuItem("Uncategorized");
-
-		clear.addActionListener(e -> actions.setItemCategory(item.getItemId(), null));
-		menu.add(clear);
-
-		if (!lastView.getCategories().isEmpty())
-			menu.addSeparator();
-
-		for (CategoryState category : lastView.getCategories())
+		if (!item.hasPrices())
 		{
-			final String name = category.getName();
-			final JMenuItem entry = new JMenuItem(name.equals(item.getCategory()) ? name + "  ." : name);
+			JLabel placeholder = new JLabel(!item.isTradeable() ? "Item not tradeable" : "—");
+			placeholder.setForeground(PricewatchColors.MUTED);
+			placeholder.setFont(FontManager.getRunescapeSmallFont());
+			row.add(placeholder);
+			return row;
+		}
 
-			entry.addActionListener(e -> actions.setItemCategory(item.getItemId(), name));
+		final long totalValue = item.getAvgValue();
+		final long singleValue = item.getAvgPrice();
+
+		JLabel totalLabel = new JLabel(GpFormat.shortValue(totalValue));
+		totalLabel.setFont(FontManager.getRunescapeSmallFont());
+		totalLabel.setForeground(COLOR_AVG);
+		totalLabel.setToolTipText(NUMBER_FORMAT.format(totalValue) + " gp");
+		row.add(totalLabel);
+
+		JLabel singleLabel = new JLabel("(" + GpFormat.shortValue(singleValue) + ")");
+		singleLabel.setFont(FontManager.getRunescapeSmallFont());
+		singleLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		singleLabel.setToolTipText(NUMBER_FORMAT.format(singleValue) + " gp");
+		row.add(singleLabel);
+
+		return row;
+	}
+
+	/**
+	 * Opens the sort-mode menu on the header toggle, with the active mode checked and its current
+	 * direction arrow shown. Clicking the active (non-manual) mode flips the sort direction; clicking
+	 * any other mode selects it.
+	 */
+	private void showSortMenu()
+	{
+		JPopupMenu menu = new JPopupMenu();
+		SortMode active = config.sortMode();
+		boolean reversed = config.sortReversed();
+		for (SortMode mode : SortMode.values())
+		{
+			boolean isActive = mode == active;
+			String label = isActive && mode != SortMode.MANUAL
+					? mode + (mode.descending(reversed) ? "  ↓" : "  ↑")
+					: mode.toString();
+			JCheckBoxMenuItem entry = new JCheckBoxMenuItem(label, isActive);
+			entry.setFont(FontManager.getRunescapeSmallFont());
+			entry.addActionListener(e ->
+			{
+				if (isActive && mode != SortMode.MANUAL)
+				{
+					if (onToggleSortDirection != null)
+						onToggleSortDirection.run();
+				}
+				else if (onSetSortMode != null)
+				{
+					onSetSortMode.accept(mode);
+				}
+			});
 			menu.add(entry);
 		}
 
-		final JMenuItem manage = new JMenuItem("Manage categories...");
-
-		manage.addActionListener(e -> openManageCategoriesDialog());
-		menu.addSeparator();
-		menu.add(manage);
-
-		menu.show(anchor, 0, anchor.getHeight());
+		menu.show(sortToggle, 0, sortToggle.getHeight());
 	}
 
-	/** Opens the share menu: copy the watchlist out as a code, or paste one in. */
-	private void showShareMenu()
+	/**
+	 * Reflects the active sort on the header toggle: the effective direction arrow
+	 * (highlighted) or the neutral glyph.
+	 */
+	private void updateSortToggle()
 	{
-		final JPopupMenu menu = new JPopupMenu();
-		final JMenuItem export = new JMenuItem("Copy share code");
-
-		export.addActionListener(e -> showExportDialog());
-
-		final JMenuItem load = new JMenuItem("Import share code...");
-
-		load.addActionListener(e -> showImportDialog());
-
-		menu.add(export);
-		menu.add(load);
-		menu.show(shareButton, 0, shareButton.getHeight());
-	}
-
-	/** Shows the generated code in a selectable field, already selected for copying. */
-	private void showExportDialog()
-	{
-		final JTextArea field = new JTextArea(actions.exportShareCode(), 4, 28);
-
-		field.setLineWrap(true);
-		field.setEditable(false);
-		field.selectAll();
-
-		JOptionPane.showMessageDialog(this, new JScrollPane(field),
-				"Share code — copy this", JOptionPane.PLAIN_MESSAGE);
-	}
-
-	/** Prompts for a code and reports what the plugin made of it. */
-	private void showImportDialog()
-	{
-		final String code = JOptionPane.showInputDialog(this,
-				"Paste a Pricewatch share code. Items you already watch are left as they are.");
-
-		if (code == null)
+		if (sortToggle == null)
 			return;
 
-		JOptionPane.showMessageDialog(this, actions.importShareCode(code));
-	}
-
-	/** Opens the category management dialog: create, rename, delete, reorder and auto-categorise. */
-	private void openManageCategoriesDialog()
-	{
-		final List<String> names = lastView.getCategories().stream()
-				.map(CategoryState::getName)
-				.collect(Collectors.toList());
-
-		final JPanel content = new JPanel();
-
-		content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
-
-		final JComboBox<String> picker = new JComboBox<>(names.toArray(new String[0]));
-
-		if (!names.isEmpty())
-			content.add(labelled("Category", picker));
-
-		content.add(buildManageButtons(picker, names));
-
-		JOptionPane.showMessageDialog(this, content, "Manage categories", JOptionPane.PLAIN_MESSAGE);
-	}
-
-	/** @return the action buttons for the manage dialog, operating on the picker's selection. */
-	private JPanel buildManageButtons(JComboBox<String> picker, List<String> names)
-	{
-		final JPanel buttons = new JPanel(new GridLayout(0, 1, 0, 4));
-
-		buttons.add(dialogButton("New category...", e ->
+		SortMode mode = config.sortMode();
+		if (mode == SortMode.MANUAL)
 		{
-			String name = JOptionPane.showInputDialog(this, "Category name");
-
-			if (name != null)
-				actions.createCategory(name);
-		}));
-
-		if (!names.isEmpty())
-		{
-			buttons.add(dialogButton("Rename...", e ->
-			{
-				String selected = (String) picker.getSelectedItem();
-				String name = JOptionPane.showInputDialog(this, "New name for " + selected, selected);
-
-				if (name != null)
-					actions.renameCategory(selected, name);
-			}));
-
-			buttons.add(dialogButton("Delete", e -> actions.deleteCategory((String) picker.getSelectedItem())));
-
-			buttons.add(dialogButton("Move up", e ->
-			{
-				String selected = (String) picker.getSelectedItem();
-
-				actions.reorderCategory(selected, names.indexOf(selected) - 1);
-			}));
-
-			buttons.add(dialogButton("Move down", e ->
-			{
-				String selected = (String) picker.getSelectedItem();
-
-				actions.reorderCategory(selected, names.indexOf(selected) + 1);
-			}));
+			sortToggle.setText("⇅");
+			sortToggle.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
 		}
-
-		buttons.add(dialogButton("Auto-categorise uncategorised", e ->
-				JOptionPane.showMessageDialog(this, actions.autoCategorize(false))));
-
-		buttons.add(dialogButton("Auto-categorise everything", e ->
-				JOptionPane.showMessageDialog(this, actions.autoCategorize(true))));
-
-		return buttons;
-	}
-
-	/** @return a plain dialog button wired to an action. */
-	private static JButton dialogButton(String text, ActionListener action)
-	{
-		final JButton button = new JButton(text);
-
-		button.addActionListener(action);
-
-		return button;
-	}
-
-	/** @return a label and a component side by side, for the dialog's form rows. */
-	private static JPanel labelled(String text, JComponent field)
-	{
-		final JPanel row = new JPanel(new BorderLayout(6, 0));
-
-		row.add(new JLabel(text), BorderLayout.WEST);
-		row.add(field, BorderLayout.CENTER);
-
-		return row;
-	}
-
-	/** @return a compact bordered button in the given accent colour. */
-	private static JButton smallButton(String text, Color accent, String tooltip)
-	{
-		final JButton button = new JButton(text);
-
-		button.setPreferredSize(new Dimension(28, 22));
-		button.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		button.setForeground(accent);
-		button.setFocusPainted(false);
-		button.setBorderPainted(true);
-		button.setBorder(BorderFactory.createLineBorder(accent));
-		button.setToolTipText(tooltip);
-		button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-
-		return button;
-	}
-
-	/** Rebuilds the results dropdown for a query, skipping items already watched. */
-	private void onSearch(String query)
-	{
-		if (query == null || query.trim().length() < MIN_SEARCH_LENGTH)
+		else
 		{
-			searchResults.setVisible(false);
-			return;
+			sortToggle.setText(mode.descending(config.sortReversed()) ? "↓" : "↑");
+			sortToggle.setForeground(COLOR_AVG);
 		}
+	}
 
-		final List<ItemPrice> results = itemManager.search(query);
+	/** Toggles reorder mode, showing or hiding the per-row drag/arrow strips without a full rebuild. */
+	private void toggleReorderMode()
+	{
+		reorderMode = !reorderMode;
+		updateReorderToggle();
+		renderTrackedRows(lastRenderItems, lastRenderIndicatorMode);
+		bottomPanel.setVisible(config.showGeEstimates() && !reorderMode);
+	}
 
-		searchResults.removeAll();
+	/** Highlights the header reorder toggle and reveals the manage-categories button when manage mode is active. */
+	private void updateReorderToggle()
+	{
+		if (reorderToggle != null)
+			reorderToggle.setForeground(reorderMode ? COLOR_AVG : ColorScheme.LIGHT_GRAY_COLOR);
 
-		int shown = 0;
-		for (ItemPrice result : results)
+		if (categoriesButton != null)
+			categoriesButton.setVisible(reorderMode);
+	}
+
+	/** Highlights the header compact toggle when compact view is active. */
+	private void updateCompactToggle()
+	{
+		if (compactToggle != null)
+			compactToggle.setForeground(config.compactView() ? COLOR_AVG : ColorScheme.LIGHT_GRAY_COLOR);
+	}
+
+	/** Builds a compact, hover-revealed glyph button styled like the row's remove button. */
+	private JButton makeRowControl(String glyph, String tooltip)
+	{
+		JButton btn = new JButton(glyph);
+		btn.setPreferredSize(new Dimension(20, 20));
+		btn.setMargin(new Insets(0, 0, 0, 0));
+		btn.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		btn.setFont(FontManager.getRunescapeSmallFont());
+		btn.setFocusPainted(false);
+		btn.setBorderPainted(false);
+		btn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		btn.setToolTipText(tooltip);
+
+		return btn;
+	}
+
+	/**
+	 * Wires drag-to-reorder onto a row's drag handle: pressing starts the drag, dragging
+	 * updates the drop indicator and edge autoscroll, and releasing commits the move.
+	 */
+	private void installDragHandle(JLabel handle, int itemId)
+	{
+		MouseAdapter dragAdapter = new MouseAdapter()
 		{
-			if (shown >= MAX_SEARCH_RESULTS)
-				break;
+			@Override
+			public void mousePressed(MouseEvent e)
+			{
+				dragItemId = itemId;
+				dragGroupIds = computeDragGroup(itemId);
+				updateDrag(e);
+			}
 
-			if (watchedIds.contains(result.getId()))
+			@Override
+			public void mouseDragged(MouseEvent e)
+			{
+				if (dragItemId != -1)
+					updateDrag(e);
+			}
+
+			@Override
+			public void mouseReleased(MouseEvent e)
+			{
+				commitDrag();
+			}
+		};
+
+		handle.addMouseListener(dragAdapter);
+		handle.addMouseMotionListener(dragAdapter);
+	}
+
+	/** Recomputes the drop target and autoscroll state for the current drag pointer, then repaints. */
+	private void updateDrag(MouseEvent e)
+	{
+		Point inPanel = SwingUtilities.convertPoint(e.getComponent(), e.getPoint(), trackedItemsPanel);
+		updateDropTarget(inPanel.y);
+		updateDragAutoscroll(e);
+		trackedItemsPanel.repaint();
+	}
+
+	/** Finds the list index where a drop at {@code yInPanel} would insert, and the indicator line position. */
+	private void updateDropTarget(int yInPanel)
+	{
+		int idx = 0;
+		int lastBottom = -1;
+		for (Component c : trackedItemsPanel.getComponents())
+		{
+			if (!(c instanceof JComponent))
 				continue;
 
-			searchResults.add(buildSearchResultRow(result.getId(), result.getName()));
-			searchResults.add(Box.createVerticalStrut(2));
-			shown++;
+			Object id = ((JComponent) c).getClientProperty(ROW_ITEM_ID);
+			if (!(id instanceof Integer) || !dragGroupIds.contains(id))
+				continue;
+
+			Rectangle b = c.getBounds();
+			if (yInPanel < b.y + b.height / 2)
+			{
+				dragInsertIndex = idx;
+				dragLineY = b.y;
+				return;
+			}
+
+			idx++;
+			lastBottom = b.y + b.height;
 		}
 
-		searchResults.setVisible(shown > 0);
-		searchResults.revalidate();
-		searchResults.repaint();
+		dragInsertIndex = idx;
+		dragLineY = lastBottom;
 	}
 
-	/** @return one search-result row, with buttons to preview or watch the item. */
-	private JPanel buildSearchResultRow(int itemId, String itemName)
+	/**
+	 * Commits the in-progress drag: places the dragged item at its new slot within its own
+	 * group and rewrites the full tracked order accordingly (kept within-group, since groups
+	 * render in global order). A no-op drop is ignored.
+	 */
+	private void commitDrag()
 	{
-		final JPanel row = new JPanel(new BorderLayout());
+		stopDragAutoscroll();
 
-		row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		row.setBorder(new EmptyBorder(4, 6, 4, 6));
-		row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 36));
+		if (dragItemId == -1)
+			return;
 
-		final JLabel name = new JLabel();
+		int draggedId = dragItemId;
+		int gap = dragInsertIndex;
+		List<Integer> group = dragGroupIds;
 
-		name.setForeground(Color.WHITE);
-		name.setFont(FontManager.getRunescapeSmallFont());
-		EllipsisText.set(name, itemName);
+		dragItemId = -1;
+		dragInsertIndex = -1;
+		dragLineY = -1;
+		dragGroupIds = new ArrayList<>();
+		trackedItemsPanel.repaint();
 
-		final JButton view = smallButton("", ColorScheme.LIGHT_GRAY_COLOR,
-				"View prices without watching the item");
+		int fromGroupPos = group.indexOf(draggedId);
+		if (gap < 0 || onSetGlobalOrder == null || fromGroupPos < 0)
+			return;
 
-		view.setIcon(eyeIcon(12));
-		view.addActionListener(e -> pick(itemId, WatchItemMode.PREVIEW));
+		List<Integer> remaining = new ArrayList<>(group);
+		remaining.remove(Integer.valueOf(draggedId));
 
-		final JButton add = smallButton("+", ADD_GREEN, "Watch item");
+		int k = gap > fromGroupPos ? gap - 1 : gap;
+		k = Math.max(0, Math.min(k, remaining.size()));
 
-		add.addActionListener(e -> pick(itemId, WatchItemMode.WATCH));
+		List<Integer> newOrder = new ArrayList<>(orderedItemIds);
+		newOrder.remove(Integer.valueOf(draggedId));
 
-		final JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
+		int insertAt;
+		if (k < remaining.size())
+			insertAt = newOrder.indexOf(remaining.get(k));
+		else if (!remaining.isEmpty())
+			insertAt = newOrder.indexOf(remaining.get(remaining.size() - 1)) + 1;
+		else
+			insertAt = newOrder.size();
 
-		buttons.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		buttons.add(view);
-		buttons.add(add);
+		if (insertAt < 0)
+			insertAt = newOrder.size();
 
-		row.add(name, BorderLayout.CENTER);
-		row.add(buttons, BorderLayout.EAST);
+		newOrder.add(insertAt, draggedId);
 
+		if (newOrder.equals(orderedItemIds))
+			return;
+
+		onSetGlobalOrder.accept(newOrder);
+	}
+
+	/**
+	 * Determines the dragged item's group as the contiguous run of item rows between accordion
+	 * headers in the rendered list (the whole list when ungrouped), returning its item ids in
+	 * visual order.
+	 */
+	private List<Integer> computeDragGroup(int itemId)
+	{
+		List<Integer> current = new ArrayList<>();
+		List<Integer> found = null;
+
+		for (Component c : trackedItemsPanel.getComponents())
+		{
+			if (!(c instanceof JComponent))
+				continue;
+
+			JComponent jc = (JComponent) c;
+			if (Boolean.TRUE.equals(jc.getClientProperty(GROUP_HEADER_KEY)))
+			{
+				if (found != null)
+					break;
+
+				current = new ArrayList<>();
+				continue;
+			}
+
+			Object id = jc.getClientProperty(ROW_ITEM_ID);
+			if (id instanceof Integer)
+			{
+				current.add((Integer) id);
+				if ((Integer) id == itemId)
+					found = current;
+			}
+		}
+
+		return found != null ? found : current;
+	}
+
+	/** Starts/stops edge autoscroll based on whether the drag pointer is near the viewport's top or bottom. */
+	private void updateDragAutoscroll(MouseEvent e)
+	{
+		JViewport viewport = (JViewport) SwingUtilities.getAncestorOfClass(JViewport.class, trackedItemsPanel);
+		if (viewport == null)
+		{
+			stopDragAutoscroll();
+			return;
+		}
+
+		Point inViewport = SwingUtilities.convertPoint(e.getComponent(), e.getPoint(), viewport);
+		int height = viewport.getExtentSize().height;
+
+		int dir = 0;
+		if (inViewport.y < DRAG_SCROLL_MARGIN)
+			dir = -1;
+		else if (inViewport.y > height - DRAG_SCROLL_MARGIN)
+			dir = 1;
+
+		if (dir == 0)
+		{
+			stopDragAutoscroll();
+			return;
+		}
+
+		dragScrollDir = dir;
+		if (dragScrollTimer == null)
+		{
+			dragScrollTimer = new Timer(16, ev -> dragAutoscrollTick());
+			dragScrollTimer.start();
+		}
+	}
+
+	/** One autoscroll step: nudges the viewport in {@link #dragScrollDir} and recomputes the drop target. */
+	private void dragAutoscrollTick()
+	{
+		JViewport viewport = (JViewport) SwingUtilities.getAncestorOfClass(JViewport.class, trackedItemsPanel);
+		if (viewport == null || dragItemId == -1)
+		{
+			stopDragAutoscroll();
+			return;
+		}
+
+		Point pos = viewport.getViewPosition();
+		int maxY = Math.max(0, trackedItemsPanel.getHeight() - viewport.getExtentSize().height);
+		int newY = Math.max(0, Math.min(maxY, pos.y + dragScrollDir * DRAG_SCROLL_STEP));
+		if (newY == pos.y)
+			return;
+
+		viewport.setViewPosition(new Point(pos.x, newY));
+
+		Point mouse = MouseInfo.getPointerInfo().getLocation();
+		SwingUtilities.convertPointFromScreen(mouse, trackedItemsPanel);
+		updateDropTarget(mouse.y);
+		trackedItemsPanel.repaint();
+	}
+
+	/** Stops the edge-autoscroll timer, if running. */
+	private void stopDragAutoscroll()
+	{
+		if (dragScrollTimer != null)
+		{
+			dragScrollTimer.stop();
+			dragScrollTimer = null;
+		}
+
+		dragScrollDir = 0;
+	}
+
+	/** Attaches a mouse listener to a component and all its descendants, so a whole row reacts as one. */
+	private void addListenerRecursively(Component c, MouseListener listener)
+	{
+		c.addMouseListener(listener);
+		if (c instanceof Container)
+		{
+			for (Component child : ((Container) c).getComponents())
+				addListenerRecursively(child, listener);
+		}
+	}
+
+	/** Installs a compact gp value on a label with no tooltip caption. */
+	private void installItemValue(JLabel label, long value, String prefix, Color tint)
+	{
+		installItemValue(label, value, prefix, null, tint);
+	}
+
+	/** Installs a prefixed compact gp value on a label via {@link #installShortValue}. */
+	private void installItemValue(JLabel label, long value, String prefix, String tooltipLabel, Color tint)
+	{
+		installShortValue(label, value, prefix + GpFormat.shortValue(value), tooltipLabel, tint);
+	}
+
+	/** Installs a pre-formatted compact value on a label with a full-number tooltip and a hover tint. */
+	private void installShortValue(JLabel label, long value, String shortText, String tooltipLabel, Color tint)
+	{
+		label.setText(shortText);
+		String tooltipPrefix = tooltipLabel == null ? "" : tooltipLabel + ": ";
+		label.setToolTipText(tooltipPrefix + NUMBER_FORMAT.format(value) + " gp");
+		removeHoverTint(label);
+		HoverTintListener listener = new HoverTintListener(label, shortText, tint);
+		label.addMouseListener(listener);
+		SwingUtilities.invokeLater(listener::applyIfHovered);
+	}
+
+	/**
+	 * Reflects the staleness of a Ltst high/low value on its cell: appends the last
+	 * trade time as a second tooltip line and dims the value's color when that trade
+	 * is older than the configured threshold.
+	 *
+	 * @param sideLabel    the value side, e.g. {@code "High"} or {@code "Low"}
+	 * @param timeLabel    the trade-time caption, e.g. {@code "Last Buy"}
+	 * @param tradeTime    the trade's epoch-second timestamp (0 when unknown)
+	 * @param freshColor   the normal value color
+	 * @param staleColor   the dimmed color used once the value is stale
+	 */
+	private void applyLiveStaleness(JLabel cell, long value, String sideLabel, String timeLabel,
+			long tradeTime, Color freshColor, Color staleColor)
+	{
+		cell.setToolTipText("<html>" + sideLabel + ": " + NUMBER_FORMAT.format(value) + " gp<br>"
+				+ timeLabel + ": " + formatAge(tradeTime) + "</html>");
+
+		if (isStale(tradeTime))
+			cell.setForeground(staleColor);
+		else
+			cell.setForeground(freshColor);
+	}
+
+	/** @return whether {@code epochSeconds} is older than the configured stale-price threshold. */
+	private boolean isStale(long epochSeconds)
+	{
+		if (epochSeconds <= 0)
+			return false;
+
+		long ageSec = System.currentTimeMillis() / 1000L - epochSeconds;
+		return ageSec > (long) config.stalePriceThresholdMinutes() * 60L;
+	}
+
+	/**
+	 * Formats an epoch-second timestamp's age as a compact relative string,
+	 * e.g. {@code "5s"}, {@code "5m"}, {@code "3hr"}, {@code "2d ago"}.
+	 */
+	private static String formatAge(long epochSeconds)
+	{
+		if (epochSeconds <= 0)
+			return "unknown";
+
+		long ageSec = Math.max(0, System.currentTimeMillis() / 1000L - epochSeconds);
+		if (ageSec < 60)
+			return ageSec + "s ago";
+
+		long mins = ageSec / 60;
+		if (mins < 60)
+			return mins + "m ago";
+
+		long hours = mins / 60;
+		if (hours < 24)
+			return hours + "hr ago";
+
+		return (hours / 24) + "d ago";
+	}
+
+	/** Live-updates the Market Info last-bought / last-sold relative times for the shown detail item. */
+	private void updateMarketInfoTimes()
+	{
+		TrackedItem item = currentItems.get(detailItemId);
+		if (item == null && previewItem != null && previewItem.getItemId() == detailItemId)
+			item = previewItem;
+
+		if (item == null)
+			return;
+
+		applyTradeTime(miLastBought, item.getLatestHighTime());
+		applyTradeTime(miLastSold, item.getLatestLowTime());
+	}
+
+	/** Sets a label to an epoch-second trade time's relative age, with the absolute time as a tooltip. */
+	private void applyTradeTime(JLabel label, long epochSeconds)
+	{
+		label.setText(formatAge(epochSeconds));
+		label.setToolTipText(epochSeconds > 0 ? new Date(epochSeconds * 1000L).toString() : null);
+	}
+
+	/**
+	 * Shows the Buy Limit cell as {@code used / total} when purchases have been tracked in
+	 * the current window (with a reset-countdown tooltip), the plain total when untouched,
+	 * or {@code N/A} when the item has no GE limit.
+	 */
+	private void applyBuyLimit(TrackedItem item)
+	{
+		int limit = item.getBuyLimit();
+		if (limit <= 0)
+		{
+			miBuyLimit.setText("N/A");
+			miBuyLimit.setToolTipText(null);
+			return;
+		}
+
+		if (item.getLimitResetEpoch() <= 0)
+		{
+			miBuyLimit.setText(NUMBER_FORMAT.format(limit));
+			miBuyLimit.setToolTipText(null);
+			return;
+		}
+
+		miBuyLimit.setText(NUMBER_FORMAT.format(item.getLimitBought()) + " / " + NUMBER_FORMAT.format(limit));
+		long secondsLeft = item.getLimitResetEpoch() - System.currentTimeMillis() / 1000L;
+		miBuyLimit.setToolTipText(secondsLeft > 0
+				? "Resets in " + formatDuration(secondsLeft)
+				: "Limit window reset");
+	}
+
+	/** Formats a positive second count as a compact {@code "2h 14m"} / {@code "43m"} / {@code "12s"} duration. */
+	private static String formatDuration(long seconds)
+	{
+		long h = seconds / 3600;
+		long m = (seconds % 3600) / 60;
+		if (h > 0)
+			return h + "h " + m + "m";
+
+		if (m > 0)
+			return m + "m";
+
+		return seconds + "s";
+	}
+
+	/** Resets a value label to plain text, dropping its tooltip and any hover-tint listener. */
+	private void clearItemValue(JLabel label, String text)
+	{
+		for (MouseListener ml : label.getMouseListeners())
+		{
+			if (ml instanceof HoverTintListener)
+				label.removeMouseListener(ml);
+		}
+
+		label.setToolTipText(null);
+		label.setText(text);
+	}
+
+	/** Gives a totals label a full-number tooltip when its text is abbreviated, none otherwise. */
+	private void applyTotalTooltip(JLabel label, long value, ValueFormat fmt)
+	{
+		if (fmt == ValueFormat.ABBREVIATED)
+			label.setToolTipText(NUMBER_FORMAT.format(value) + " gp");
+		else
+			label.setToolTipText(null);
+	}
+
+	/** Formats a totals value as either full or abbreviated gp per the configured {@link ValueFormat}. */
+	private static String formatTotalGp(long value, ValueFormat fmt)
+	{
+		return fmt == ValueFormat.FULL ? GpFormat.fullGp(value) : GpFormat.shortGp(value);
+	}
+
+	/**
+	 * Constructs the detail-view card once: the header, the scrollable body, and
+	 * every detail section (current values, market info, charts, overview grid,
+	 * alch, notifications, acquisitions log). Sections are populated later per item.
+	 */
+	private void buildDetailCard()
+	{
+		detailCard.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		detailCard.setBorder(new EmptyBorder(10, 10, 10, 10));
+
+		JButton backBtn = new JButton("Back", buildLeftArrowIcon());
+		backBtn.setIconTextGap(6);
+		backBtn.setVerticalAlignment(SwingConstants.CENTER);
+		backBtn.setHorizontalAlignment(SwingConstants.CENTER);
+		backBtn.setFocusPainted(false);
+		backBtn.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		backBtn.setForeground(Color.WHITE);
+		backBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		backBtn.addActionListener(e -> showMain());
+
+		JPanel headerRow = new JPanel(new BorderLayout(6, 0))
+		{
+			@Override
+			public Dimension getMaximumSize()
+			{
+				return new Dimension(Integer.MAX_VALUE, getPreferredSize().height);
+			}
+		};
+		headerRow.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		headerRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+		headerRow.add(backBtn, BorderLayout.WEST);
+
+		detailIconLabel.setPreferredSize(new Dimension(32, 32));
+		detailIconLabel.setVerticalAlignment(SwingConstants.CENTER);
+		detailNameLabel.setForeground(Color.WHITE);
+		detailNameLabel.setFont(FontManager.getRunescapeBoldFont());
+		detailNameLabel.setMaximumSize(new Dimension(Integer.MAX_VALUE,
+				detailNameLabel.getFontMetrics(detailNameLabel.getFont()).getHeight()));
+		detailQtyLabel.setForeground(Color.WHITE);
+		detailQtyLabel.setFont(FontManager.getRunescapeSmallFont());
+
+		detailDescriptionArea.setEditable(false);
+		detailDescriptionArea.setFocusable(false);
+		detailDescriptionArea.setOpaque(false);
+		((DefaultCaret) detailDescriptionArea.getCaret()).setUpdatePolicy(DefaultCaret.NEVER_UPDATE);
+		detailDescriptionArea.setLineWrap(true);
+		detailDescriptionArea.setWrapStyleWord(true);
+		detailDescriptionArea.setMargin(new Insets(0, 0, 0, 0));
+		detailDescriptionArea.setForeground(DESCRIPTION_COLOR);
+		detailDescriptionArea.setFont(FontManager.getRunescapeSmallFont().deriveFont(Font.ITALIC));
+		detailDescriptionArea.setAlignmentX(Component.LEFT_ALIGNMENT);
+		detailDescriptionArea.setBorder(new EmptyBorder(8, 0, 0, 0));
+
+		JPanel titleTextStack = new JPanel();
+		titleTextStack.setLayout(new BoxLayout(titleTextStack, BoxLayout.Y_AXIS));
+		titleTextStack.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		detailNameLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+		detailQtyLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+		titleTextStack.add(detailNameLabel);
+		titleTextStack.add(Box.createVerticalStrut(2));
+		titleTextStack.add(detailQtyLabel);
+
+		JPanel titleRow = new JPanel(new BorderLayout(8, 0))
+		{
+			@Override
+			public Dimension getMaximumSize()
+			{
+				return new Dimension(Integer.MAX_VALUE, getPreferredSize().height);
+			}
+		};
+		titleRow.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		titleRow.setBorder(new EmptyBorder(16, 0, 0, 0));
+		titleRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+		titleRow.add(detailIconLabel, BorderLayout.WEST);
+		titleRow.add(titleTextStack, BorderLayout.CENTER);
+
+		topStack = new JPanel();
+		topStack.setLayout(new BoxLayout(topStack, BoxLayout.Y_AXIS));
+		topStack.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		topStack.add(headerRow);
+		topStack.add(titleRow);
+		topStack.add(detailDescriptionArea);
+
+		detailSectionsHost = new JPanel();
+		detailSectionsHost.setLayout(new BoxLayout(detailSectionsHost, BoxLayout.Y_AXIS));
+		detailSectionsHost.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		detailSectionsHost.setAlignmentX(Component.LEFT_ALIGNMENT);
+		topStack.add(detailSectionsHost);
+
+		itemValuesSection = buildDetailSection("Item Current Values",
+				buildCurrentValuesBlock(icvHigh, icvLow, icvAvg, icvVolume, null));
+
+		ccvSection = buildDetailSection("Collection Current Values",
+				buildCurrentValuesBlock(ccvHigh, ccvLow, ccvAvg, ccvQuantity, ccvProfit));
+
+		priceOverviewSection = buildDetailSectionWithPopout("Price Overview",
+				this::openOverviewPopout, buildOverviewGrid());
+
+		priceGraph = new PriceGraphPanel(PriceGraphPanel.Mode.PRICE);
+		priceGraph.setAlignmentX(Component.LEFT_ALIGNMENT);
+		priceGraph.setSmooth(graphSmooth);
+		priceGraph.setSmoothListener(b ->
+		{
+			graphSmooth = b;
+			if (pricePopoutGraph != null)
+				pricePopoutGraph.setSmooth(b);
+		});
+		priceGraph.setLineSet(graphLineSet);
+		priceGraph.setLineSetListener(set ->
+		{
+			graphLineSet = set;
+			if (pricePopoutGraph != null)
+				pricePopoutGraph.setLineSet(set);
+		});
+		priceGraphSection = buildDetailSectionWithPopout("Price Graph",
+				() -> openGraphPopout("Price Graph", PriceGraphPanel.Mode.PRICE, priceGraph),
+				priceGraph, Box.createVerticalStrut(4));
+
+		volumeGraph = new PriceGraphPanel(PriceGraphPanel.Mode.VOLUME);
+		volumeGraph.setAlignmentX(Component.LEFT_ALIGNMENT);
+		volumeGraphSection = buildDetailSectionWithPopout("Volume Graph",
+				() -> openGraphPopout("Volume Graph", PriceGraphPanel.Mode.VOLUME, volumeGraph),
+				volumeGraph);
+
+		marketInfoSection = buildDetailSection("Market Info", buildMarketInfoBlock());
+
+		alchInfoSection = buildDetailSection("Alchemy Info", buildAlchBlock());
+
+		linksSection = buildDetailSection("Links", buildLinksBlock());
+
+		detailCard.add(topStack, BorderLayout.NORTH);
+
+		acquisitionsModel = new AcquisitionsTableModel(config, onAcquisitionsEdited, () -> detailItemId, false);
+		acquisitionsTable = new JTable(acquisitionsModel)
+		{
+			@Override
+			public Dimension getPreferredScrollableViewportSize()
+			{
+				int visibleRows = Math.min(10, Math.max(5, getRowCount() + 1));
+				Dimension prefBody = super.getPreferredScrollableViewportSize();
+				return new Dimension(prefBody.width, visibleRows * getRowHeight());
+			}
+
+			@Override
+			public String getToolTipText(MouseEvent e)
+			{
+				int row = rowAtPoint(e.getPoint());
+				int col = columnAtPoint(e.getPoint());
+				if (row < 0 || col < 0)
+					return null;
+
+				if (acquisitionsModel.isSymbolColumn(convertColumnIndexToModel(col)))
+					return acquisitionsModel.sourceLabelAt(row);
+
+				if (convertColumnIndexToModel(col) == 2 && acquisitionsModel.isSellEstimated(row))
+					return AcqCellRenderer.ESTIMATED_TOOLTIP;
+
+				Object val = getValueAt(row, col);
+				if (val instanceof Number)
+				{
+					long v = ((Number) val).longValue();
+					if (Math.abs(v) >= (col == 3 ? 1000 : 10000))
+						return acqTooltipLabel(col) + ": " + NUMBER_FORMAT.format(v);
+				}
+
+				return null;
+			}
+
+			@Override
+			protected JTableHeader createDefaultTableHeader()
+			{
+				return new JTableHeader(columnModel)
+				{
+					@Override
+					public String getToolTipText(MouseEvent e)
+					{
+						int col = columnAtPoint(e.getPoint());
+						return col < 0 ? null : acqTooltipLabel(convertColumnIndexToModel(col));
+					}
+				};
+			}
+		};
+		acquisitionsTable.addMouseMotionListener(new MouseMotionAdapter()
+		{
+			@Override
+			public void mouseMoved(MouseEvent e)
+			{
+				int r = acquisitionsTable.rowAtPoint(e.getPoint());
+				int c = acquisitionsTable.columnAtPoint(e.getPoint());
+				if (r != acqHoverRow || c != acqHoverCol)
+				{
+					acqHoverRow = r;
+					acqHoverCol = c;
+					acquisitionsTable.repaint();
+				}
+			}
+		});
+		acquisitionsTable.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		acquisitionsTable.setForeground(Color.WHITE);
+		acquisitionsTable.setFont(FontManager.getRunescapeSmallFont());
+		acquisitionsTable.setGridColor(PricewatchColors.TABLE_GRID);
+		acquisitionsTable.setRowHeight(22);
+		acquisitionsTable.setFillsViewportHeight(true);
+		acquisitionsTable.getTableHeader().setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		acquisitionsTable.getTableHeader().setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		acquisitionsTable.getTableHeader().setFont(FontManager.getRunescapeSmallFont());
+		applyTableRenderers();
+		TableCellRenderer headerRenderer = acquisitionsTable.getTableHeader().getDefaultRenderer();
+		if (headerRenderer instanceof DefaultTableCellRenderer)
+			((DefaultTableCellRenderer) headerRenderer).setHorizontalAlignment(SwingConstants.CENTER);
+
+		acquisitionsTable.addMouseListener(new MouseAdapter()
+		{
+			@Override
+			public void mouseExited(MouseEvent e)
+			{
+				if (acqHoverRow != -1 || acqHoverCol != -1)
+				{
+					acqHoverRow = -1;
+					acqHoverCol = -1;
+					acquisitionsTable.repaint();
+				}
+			}
+
+			@Override
+			public void mouseClicked(MouseEvent e)
+			{
+				if (e.getClickCount() != 2 || e.getButton() != MouseEvent.BUTTON1)
+					return;
+
+				int row = acquisitionsTable.rowAtPoint(e.getPoint());
+				if (row >= 0)
+					return;
+
+				TrackedItem t = currentItems.get(detailItemId);
+				if (t == null)
+					return;
+
+				long price = t.getAvgPrice() > 0 ? t.getAvgPrice() : 0;
+				t.getAcquisitions().add(new AcquisitionRecord(0, price, null, AcquisitionSource.MANUAL));
+				acquisitionsModel.fireTableDataChanged();
+				acquisitionsTable.revalidate();
+				onAcquisitionsEdited.accept(detailItemId);
+				int newRow = acquisitionsModel.getRowCount() - 1;
+				scrollAcquisitionsToBottom();
+				if (newRow >= 0 && acquisitionsTable.editCellAt(newRow, 0))
+				{
+					acquisitionsTable.changeSelection(newRow, 0, false, false);
+					Component editor = acquisitionsTable.getEditorComponent();
+					if (editor != null)
+						editor.requestFocusInWindow();
+				}
+			}
+		});
+
+		JScrollPane tableScroll = new JScrollPane(acquisitionsTable);
+		tableScroll.getViewport().setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		tableScroll.setBorder(BorderFactory.createLineBorder(PricewatchColors.TABLE_GRID));
+		acquisitionsScroll = tableScroll;
+
+		JButton addRowBtn = new JButton("+ Add");
+		addRowBtn.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		addRowBtn.setForeground(Color.WHITE);
+		addRowBtn.setFocusPainted(false);
+		addRowBtn.setFont(FontManager.getRunescapeSmallFont());
+		addRowBtn.setMargin(new Insets(2, 5, 2, 5));
+		addRowBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		addRowBtn.addActionListener(e ->
+		{
+			TrackedItem t = currentItems.get(detailItemId);
+			if (t == null)
+				return;
+
+			long price = t.getAvgPrice() > 0 ? t.getAvgPrice() : 0;
+			t.getAcquisitions().add(new AcquisitionRecord(0, price, null, AcquisitionSource.MANUAL));
+			acquisitionsModel.fireTableDataChanged();
+			acquisitionsTable.revalidate();
+			onAcquisitionsEdited.accept(detailItemId);
+			scrollAcquisitionsToBottom();
+		});
+
+		JButton removeRowBtn = new JButton("− Remove");
+		removeRowBtn.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		removeRowBtn.setForeground(Color.WHITE);
+		removeRowBtn.setFocusPainted(false);
+		removeRowBtn.setFont(FontManager.getRunescapeSmallFont());
+		removeRowBtn.setMargin(new Insets(2, 5, 2, 5));
+		removeRowBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		removeRowBtn.setEnabled(false);
+
+		Runnable removeSelectedRows = () ->
+		{
+			TrackedItem t = currentItems.get(detailItemId);
+			if (t == null)
+				return;
+
+			if (acquisitionsTable.isEditing())
+
+				acquisitionsTable.getCellEditor().stopCellEditing();
+
+			int[] selected = acquisitionsTable.getSelectedRows();
+			if (selected.length == 0)
+				return;
+
+			List<AcquisitionRecord> records = t.getAcquisitions();
+			Arrays.sort(selected);
+			for (int i = selected.length - 1; i >= 0; i--)
+			{
+				int idx = selected[i];
+				if (idx >= 0 && idx < records.size())
+					records.remove(idx);
+			}
+
+			acquisitionsModel.fireTableDataChanged();
+			acquisitionsTable.revalidate();
+			onAcquisitionsEdited.accept(detailItemId);
+		};
+
+		removeRowBtn.addActionListener(e -> removeSelectedRows.run());
+		acquisitionsTable.getSelectionModel().addListSelectionListener(e ->
+				removeRowBtn.setEnabled(acquisitionsTable.getSelectedRowCount() > 0));
+
+		acquisitionsTable.getInputMap(JComponent.WHEN_FOCUSED)
+				.put(KeyStroke.getKeyStroke(KeyEvent.VK_DELETE, 0), "deleteSelectedRows");
+		acquisitionsTable.getActionMap().put("deleteSelectedRows", new AbstractAction()
+		{
+			@Override
+			public void actionPerformed(ActionEvent e)
+			{
+				removeSelectedRows.run();
+			}
+		});
+
+		JButton cleanBtn = new JButton(buildBrushIcon());
+		cleanBtn.setToolTipText("Remove all rows with quantity 0");
+		cleanBtn.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		cleanBtn.setForeground(Color.WHITE);
+		cleanBtn.setFocusPainted(false);
+		cleanBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		cleanBtn.setMargin(new Insets(2, 4, 2, 4));
+		cleanBtn.addActionListener(e ->
+		{
+			TrackedItem t = currentItems.get(detailItemId);
+			if (t == null)
+				return;
+
+			boolean removed = t.getAcquisitions().removeIf(r -> r.getQuantity() == 0);
+			if (!removed)
+				return;
+
+			acquisitionsModel.fireTableDataChanged();
+			acquisitionsTable.revalidate();
+			onAcquisitionsEdited.accept(detailItemId);
+		});
+
+		JButton clearBtn = new JButton("Clear");
+		clearBtn.setToolTipText("Remove every row from the collection log");
+		clearBtn.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		clearBtn.setForeground(COLOR_LOW);
+		clearBtn.setFocusPainted(false);
+		clearBtn.setFont(FontManager.getRunescapeSmallFont());
+		clearBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		clearBtn.setMargin(new Insets(2, 5, 2, 5));
+		clearBtn.addActionListener(e ->
+		{
+			TrackedItem t = currentItems.get(detailItemId);
+			if (t == null || t.getAcquisitions().isEmpty())
+				return;
+
+			int choice = JOptionPane.showConfirmDialog(
+					PricewatchPanel.this,
+					"Clear the entire collection log for this item?",
+					"Clear Collection Log",
+					JOptionPane.YES_NO_OPTION,
+					JOptionPane.WARNING_MESSAGE);
+			if (choice != JOptionPane.YES_OPTION)
+				return;
+
+			if (acquisitionsTable.isEditing())
+
+				acquisitionsTable.getCellEditor().cancelCellEditing();
+
+			if (onClearAcquisitions != null)
+				onClearAcquisitions.accept(detailItemId);
+		});
+
+		JButton[] logButtons = {addRowBtn, removeRowBtn, cleanBtn, clearBtn};
+		int btnHeight = 0;
+		for (JButton b : logButtons)
+			btnHeight = Math.max(btnHeight, b.getPreferredSize().height);
+
+		for (JButton b : logButtons)
+			b.setPreferredSize(new Dimension(b.getPreferredSize().width, btnHeight));
+
+		JPanel tableButtons = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
+		tableButtons.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		tableButtons.setBorder(new EmptyBorder(4, 0, 4, 0));
+		tableButtons.add(addRowBtn);
+		tableButtons.add(removeRowBtn);
+		tableButtons.add(cleanBtn);
+		tableButtons.add(clearBtn);
+
+		acqPopoutButton = buildPopoutButton(this::openCollectionLogPopout);
+		acqPopoutButton.setVisible(false);
+		JComponent logTitle = buildDetailSectionTitleRow("Item Collection Log", acqPopoutButton);
+		tableScroll.getVerticalScrollBar().addComponentListener(new ComponentAdapter()
+		{
+			@Override
+			public void componentShown(ComponentEvent e)
+			{
+				updateAcqPopoutButton();
+			}
+
+			@Override
+			public void componentHidden(ComponentEvent e)
+			{
+				updateAcqPopoutButton();
+			}
+		});
+
+		acquisitionsSection = new JPanel(new BorderLayout(0, 4));
+		acquisitionsSection.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		acquisitionsSection.setAlignmentX(Component.LEFT_ALIGNMENT);
+		acquisitionsSection.add(logTitle, BorderLayout.NORTH);
+		acquisitionsSection.add(tableScroll, BorderLayout.CENTER);
+		acquisitionsSection.add(tableButtons, BorderLayout.SOUTH);
+
+		buildNotificationsSection();
+
+		rebuildOverviewGrid();
+		applyDetailSectionLayout();
+	}
+
+	/** Builds the notifications section: the rules table and its add/remove/edit controls. */
+	private void buildNotificationsSection()
+	{
+		notificationsModel = new NotificationsTableModel(this::notifyNotificationsEdited);
+		notificationsTable = new JTable(notificationsModel)
+		{
+			@Override
+			public Dimension getPreferredScrollableViewportSize()
+			{
+				return new Dimension(getPreferredSize().width,
+						Math.min(getPreferredSize().height, getRowHeight() * DEFAULT_NOTIFICATION_ROWS + 2));
+			}
+		};
+		notificationsTable.setFillsViewportHeight(true);
+		notificationsTable.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		notificationsTable.setForeground(Color.WHITE);
+		notificationsTable.setGridColor(PricewatchColors.TABLE_GRID);
+		notificationsTable.setRowHeight(22);
+		notificationsTable.setFont(FontManager.getRunescapeSmallFont());
+		notificationsTable.getTableHeader().setFont(FontManager.getRunescapeSmallFont());
+		notificationsTable.getTableHeader().setReorderingAllowed(false);
+		notificationsTable.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
+
+		notificationsTable.putClientProperty("terminateEditOnFocusLost", Boolean.TRUE);
+
+		notificationsTable.addPropertyChangeListener("tableCellEditor",
+				e -> editingNotifications = notificationsTable.isEditing());
+		applyNotificationRenderers();
+
+		JScrollPane tableScroll = new JScrollPane(notificationsTable);
+		tableScroll.getViewport().setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		tableScroll.setBorder(BorderFactory.createLineBorder(PricewatchColors.TABLE_GRID));
+
+		JButton addRowBtn = new JButton("+ Add");
+		styleNotifButton(addRowBtn, Color.WHITE);
+		addRowBtn.addActionListener(e ->
+		{
+			TrackedItem t = currentItems.get(detailItemId);
+			if (t == null)
+				return;
+
+			t.getNotifications().add(new NotificationRule());
+			notificationsModel.fireTableDataChanged();
+			notificationsTable.revalidate();
+			notifyNotificationsEdited();
+		});
+
+		JButton removeRowBtn = new JButton("− Remove");
+		styleNotifButton(removeRowBtn, Color.WHITE);
+		removeRowBtn.setEnabled(false);
+		Runnable removeSelected = () ->
+		{
+			TrackedItem t = currentItems.get(detailItemId);
+			if (t == null)
+				return;
+
+			if (notificationsTable.isEditing())
+
+				notificationsTable.getCellEditor().stopCellEditing();
+
+			int[] selected = notificationsTable.getSelectedRows();
+			if (selected.length == 0)
+				return;
+
+			List<NotificationRule> rules = t.getNotifications();
+			Arrays.sort(selected);
+			for (int i = selected.length - 1; i >= 0; i--)
+			{
+				int idx = selected[i];
+				if (idx >= 0 && idx < rules.size())
+					rules.remove(idx);
+			}
+
+			while (rules.size() < DEFAULT_NOTIFICATION_ROWS)
+				rules.add(new NotificationRule());
+
+			notificationsModel.fireTableDataChanged();
+			notificationsTable.revalidate();
+			notifyNotificationsEdited();
+		};
+		removeRowBtn.addActionListener(e -> removeSelected.run());
+		notificationsTable.getSelectionModel().addListSelectionListener(e ->
+				removeRowBtn.setEnabled(notificationsTable.getSelectedRowCount() > 0));
+		notificationsTable.getInputMap(JComponent.WHEN_FOCUSED)
+				.put(KeyStroke.getKeyStroke(KeyEvent.VK_DELETE, 0), "deleteSelectedRules");
+		notificationsTable.getActionMap().put("deleteSelectedRules", new AbstractAction()
+		{
+			@Override
+			public void actionPerformed(ActionEvent e)
+			{
+				removeSelected.run();
+			}
+		});
+
+		JButton clearBtn = new JButton("Clear");
+		styleNotifButton(clearBtn, COLOR_LOW);
+		clearBtn.setToolTipText("Remove every notification rule");
+		clearBtn.addActionListener(e ->
+		{
+			TrackedItem t = currentItems.get(detailItemId);
+			if (t == null || t.getNotifications().isEmpty())
+				return;
+
+			int choice = JOptionPane.showConfirmDialog(this,
+					"Remove all notification rules for this item?",
+					"Clear Notifications", JOptionPane.YES_NO_OPTION);
+			if (choice != JOptionPane.YES_OPTION)
+				return;
+
+			t.getNotifications().clear();
+
+			for (int i = 0; i < DEFAULT_NOTIFICATION_ROWS; i++)
+				t.getNotifications().add(new NotificationRule());
+
+			notificationsModel.fireTableDataChanged();
+			notificationsTable.revalidate();
+			notifyNotificationsEdited();
+		});
+
+		JPanel tableButtons = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
+		tableButtons.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		tableButtons.setBorder(new EmptyBorder(4, 0, 4, 0));
+		tableButtons.add(addRowBtn);
+		tableButtons.add(removeRowBtn);
+		tableButtons.add(clearBtn);
+
+		notificationsSection = new JPanel(new BorderLayout(0, 4));
+		notificationsSection.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		notificationsSection.setAlignmentX(Component.LEFT_ALIGNMENT);
+		notificationsSection.add(buildDetailSectionTitle("Notifications", true), BorderLayout.NORTH);
+		notificationsSection.add(tableScroll, BorderLayout.CENTER);
+		notificationsSection.add(tableButtons, BorderLayout.SOUTH);
+	}
+
+	/** Applies the shared small-button styling to a notifications-section button. */
+	private void styleNotifButton(JButton btn, Color fg)
+	{
+		btn.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		btn.setForeground(fg);
+		btn.setFocusPainted(false);
+		btn.setFont(FontManager.getRunescapeSmallFont());
+		btn.setMargin(new Insets(2, 5, 2, 5));
+		btn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+	}
+
+	/**
+	 * Notifies the plugin (via callback) that the current item's notification rules
+	 * changed, so it can persist them.
+	 */
+	private void notifyNotificationsEdited()
+	{
+		if (onNotificationsEdited != null && detailItemId > 0)
+			onNotificationsEdited.accept(detailItemId);
+	}
+
+	/** Builds a titled detail-view section containing the given components. */
+	private JPanel buildDetailSection(String title, Component... contents)
+	{
+		JPanel wrapper = newSectionWrapper();
+		wrapper.add(buildDetailSectionTitle(title, true));
+		for (Component c : contents)
+			wrapper.add(c);
+
+		return wrapper;
+	}
+
+	/** Builds a titled detail-view section whose title row carries a pop-out button. */
+	private JPanel buildDetailSectionWithPopout(String title, Runnable onPopout, Component... contents)
+	{
+		JPanel wrapper = newSectionWrapper();
+		wrapper.add(buildDetailSectionTitleRow(title, onPopout));
+		for (Component c : contents)
+			wrapper.add(c);
+
+		return wrapper;
+	}
+
+	/** @return an empty vertical wrapper panel used to stack a detail section's rows. */
+	private JPanel newSectionWrapper()
+	{
+		JPanel wrapper = new JPanel();
+		wrapper.setLayout(new BoxLayout(wrapper, BoxLayout.Y_AXIS));
+		wrapper.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		wrapper.setAlignmentX(Component.LEFT_ALIGNMENT);
+		return wrapper;
+	}
+
+	/** Builds a section title row with a pop-out button wired to the given action. */
+	private JComponent buildDetailSectionTitleRow(String title, Runnable onPopout)
+	{
+		return buildDetailSectionTitleRow(title, buildPopoutButton(onPopout));
+	}
+
+	/**
+	 * Builds a divider-topped section title row with the title centred between a strut
+	 * matching the pop-out button's width (so the title stays optically centred) and the
+	 * button itself.
+	 */
+	private JComponent buildDetailSectionTitleRow(String title, JButton popBtn)
+	{
+		JPanel row = new JPanel(new BorderLayout())
+		{
+			@Override
+			public Dimension getMaximumSize()
+			{
+				return new Dimension(Integer.MAX_VALUE, getPreferredSize().height);
+			}
+		};
+		row.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		row.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+		row.setBorder(BorderFactory.createCompoundBorder(
+				BorderFactory.createCompoundBorder(
+						new EmptyBorder(10, 0, 0, 0),
+						new MatteBorder(1, 0, 0, 0, DIVIDER_COLOR)),
+				new EmptyBorder(4, 0, 2, 0)));
+
+		JLabel label = new JLabel(title, SwingConstants.CENTER);
+		label.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		label.setFont(FontManager.getRunescapeBoldFont());
+
+		row.add(Box.createHorizontalStrut(popBtn.getPreferredSize().width), BorderLayout.WEST);
+		row.add(label, BorderLayout.CENTER);
+		row.add(popBtn, BorderLayout.EAST);
 		return row;
 	}
 
-	/**
-	 * Hands a chosen search result to the plugin and clears the search field.
-	 *
-	 * <p>A preview opens straight into the detail view, which is the whole point of viewing
-	 * an item without watching it — otherwise the only visible effect is a row appearing in a
-	 * Preview section, which reads as having added the item after all.
-	 */
-	private void pick(int itemId, WatchItemMode mode)
+	/** Reorders and shows/hides the detail sections to match the configured slot assignments. */
+	private void applyDetailSectionLayout()
 	{
-		actions.addWatchedItem(mode, itemId);
-		searchField.setText("");
-		searchResults.setVisible(false);
+		if (detailSectionsHost == null)
+			return;
 
-		if (mode == WatchItemMode.PREVIEW)
-			openDetail(itemId);
+		JPanel[] sections = {
+				itemValuesSection, ccvSection, marketInfoSection, priceOverviewSection,
+				priceGraphSection, volumeGraphSection, alchInfoSection, notificationsSection,
+				acquisitionsSection, linksSection
+		};
+		SectionSlot[] slots = {
+				config.showItemValues(), config.showCollectionValues(), config.showMarketInfo(),
+				config.showPriceOverview(), config.showPriceGraph(), config.showVolumeGraph(),
+				config.showAlchInfo(), config.showNotifications(), config.showItemLog(),
+				config.showLinks()
+		};
+
+		StringBuilder sig = new StringBuilder();
+		for (SectionSlot slot : slots)
+			sig.append(slot.ordinal()).append(',');
+
+		String signature = sig.toString();
+		if (signature.equals(appliedSectionLayout))
+			return;
+
+		appliedSectionLayout = signature;
+
+		List<Integer> order = new ArrayList<>();
+		for (int i = 0; i < sections.length; i++)
+		{
+			if (!slots[i].isNone())
+				order.add(i);
+		}
+
+		order.sort(Comparator.comparingInt(i -> slots[i].ordinal()));
+
+		detailSectionsHost.removeAll();
+		for (int i : order)
+		{
+			sections[i].setVisible(true);
+			detailSectionsHost.add(sections[i]);
+		}
+
+		detailSectionsHost.revalidate();
+		detailSectionsHost.repaint();
+	}
+
+	/** Rebuilds the price overview grid to match the configured preset of time-window rows. */
+	private void rebuildOverviewGrid()
+	{
+		if (overviewGrid == null)
+			return;
+
+		Set<TimeWindow> desired = config.priceOverviewRows().getWindows();
+		if (desired.equals(appliedOverviewRows))
+			return;
+
+		appliedOverviewRows = desired;
+		populateOverviewGrid(desired);
+	}
+
+	/** @return the item id whose detail view is open, or a non-positive value when on the main list. */
+	public int getDetailItemId()
+	{
+		return detailItemId;
 	}
 
 	/**
-	 * Loads the bundled eye icon for the view-only button.
-	 *
-	 * @param size the square edge to scale to
-	 * @return the icon, or a blank one of the same size if the resource will not load, so a
-	 *         missing image costs the button its picture rather than the panel its search row
+	 * Opens the tracked detail card for {@code itemId}. A no-op when that item's tracked
+	 * detail is already showing, so re-opening it (e.g. from the GE integration) leaves the
+	 * card's scroll position and state untouched instead of rebuilding it back to the top.
 	 */
-	private Icon eyeIcon(int size)
+	public void openTrackedDetail(int itemId)
+	{
+		if (detailItemId == itemId && previewItem == null)
+			return;
+
+		showDetail(itemId);
+	}
+
+	/** @return whether the user is mid-edit in the notifications table, so the plugin should defer firing rules. */
+	public boolean isEditingNotifications()
+	{
+		return editingNotifications;
+	}
+
+	/** Supplies the latest nature/fire rune prices used to compute high-alch profit in the detail view. */
+	public void setAlchRunePrices(long naturePrice, long firePrice)
+	{
+		this.natureRunePrice = naturePrice;
+		this.fireRunePrice = firePrice;
+	}
+
+	/** Re-populates the open detail view with fresh data for {@code itemId} (no-op if a different item is shown). */
+	public void refreshDetailData(int itemId)
+	{
+		if (detailItemId != itemId)
+			return;
+
+		TrackedItem item = currentItems.get(itemId);
+		if (item == null && previewItem != null && previewItem.getItemId() == itemId)
+			item = previewItem;
+
+		if (item != null)
+		{
+			final TrackedItem shown = item;
+			preserveDetailScroll(() -> populateDetail(shown));
+		}
+	}
+
+	/**
+	 * Runs a refresh-in-place of the open detail card, keeping the enclosing scroll
+	 * pane's vertical position. The scroll yank this guards against was the
+	 * description area's caret scrolling itself into view on {@code setText} — muzzled
+	 * at the source with {@link DefaultCaret#NEVER_UPDATE} — so this is defensive:
+	 * layout is forced synchronously and the position re-asserted in the same EDT
+	 * event, with a queued re-assert for layout that settles late (async item images).
+	 * Opening a different item still starts at the top, since {@link #showDetail}
+	 * bypasses this.
+	 */
+	private void preserveDetailScroll(Runnable refresh)
+	{
+		JScrollPane scroll = (JScrollPane) SwingUtilities.getAncestorOfClass(JScrollPane.class, cardsHost);
+		if (scroll == null)
+		{
+			refresh.run();
+			return;
+		}
+
+		final JScrollBar bar = scroll.getVerticalScrollBar();
+		final int value = bar.getValue();
+		refresh.run();
+		scroll.validate();
+		bar.setValue(value);
+		SwingUtilities.invokeLater(() -> bar.setValue(value));
+	}
+
+	/** Scrolls the acquisitions log to its newest (bottom) entry once layout has settled. */
+	private void scrollAcquisitionsToBottom()
+	{
+		if (acquisitionsScroll == null)
+			return;
+
+		SwingUtilities.invokeLater(() ->
+		{
+			JScrollBar bar = acquisitionsScroll.getVerticalScrollBar();
+			bar.setValue(bar.getMaximum());
+		});
+	}
+
+	/**
+	 * Builds the stacked current-values block (high/low/avg plus a fourth metric row),
+	 * colouring each label by metric and appending a divider-topped profit row when a
+	 * profit label is supplied.
+	 */
+	private JPanel buildCurrentValuesBlock(JLabel high, JLabel low, JLabel avg, JLabel fourth, JLabel profit)
+	{
+		JPanel block = new JPanel()
+		{
+			@Override
+			public Dimension getMaximumSize()
+			{
+				return new Dimension(Integer.MAX_VALUE, getPreferredSize().height);
+			}
+		};
+		block.setLayout(new BoxLayout(block, BoxLayout.Y_AXIS));
+		block.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		block.setBorder(new EmptyBorder(6, 8, 6, 8));
+		block.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+		high.setForeground(COLOR_HIGH);
+		low.setForeground(COLOR_LOW);
+		avg.setForeground(COLOR_AVG);
+		fourth.setForeground(COLOR_VOLUME);
+		for (JLabel l : new JLabel[]{high, low, avg, fourth})
+		{
+			l.setFont(FontManager.getRunescapeSmallFont());
+			JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 3));
+			row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+			row.add(l);
+			block.add(row);
+		}
+
+		if (profit != null)
+		{
+			profit.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+			profit.setFont(FontManager.getRunescapeSmallFont());
+			JPanel profitRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+			profitRow.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+			profitRow.add(profit);
+			profitRow.setBorder(BorderFactory.createCompoundBorder(
+					BorderFactory.createCompoundBorder(
+							new EmptyBorder(4, 0, 0, 0),
+							new MatteBorder(1, 0, 0, 0, DIVIDER_COLOR)),
+					new EmptyBorder(4, 0, 0, 0)));
+			block.add(profitRow);
+		}
+
+		return block;
+	}
+
+	/** Builds (and remembers) the sidebar overview grid. */
+	private JPanel buildOverviewGrid()
+	{
+		overviewGrid = createOverviewGrid(overviewLabels, overviewWindowLabels, 2);
+		return overviewGrid;
+	}
+
+	/**
+	 * Creates an overview grid panel that custom-paints its own dividers: a vertical rule
+	 * after the window-label column and a horizontal rule between consecutive rows, both
+	 * derived from the live label positions so they track layout changes.
+	 */
+	private JPanel createOverviewGrid(Map<TimeWindow, JLabel[]> labels, List<JLabel> windowLabels, int sepGap)
+	{
+		JPanel grid = new JPanel(new GridBagLayout())
+		{
+			@Override
+			public Dimension getMaximumSize()
+			{
+				return new Dimension(Integer.MAX_VALUE, getPreferredSize().height);
+			}
+
+			@Override
+			protected void paintComponent(Graphics g)
+			{
+				super.paintComponent(g);
+				JLabel[] firstRow = labels.get(OVERVIEW_WINDOWS[0]);
+				if (firstRow == null || firstRow[0] == null)
+					return;
+
+				int vx = firstRow[0].getX() - 3;
+				if (!windowLabels.isEmpty())
+				{
+					JLabel ref = windowLabels.get(0);
+					vx = ref.getX() + ref.getWidth() + sepGap;
+				}
+
+				g.setColor(DIVIDER_COLOR);
+				g.drawLine(vx, 4, vx, getHeight() - 4);
+
+				g.setColor(OVERVIEW_ROW_DIVIDER);
+				JLabel prev = null;
+				for (TimeWindow w : OVERVIEW_WINDOWS)
+				{
+					JLabel[] cells = labels.get(w);
+					if (cells == null || cells[0] == null)
+						continue;
+
+					JLabel cur = cells[0];
+					if (prev != null)
+					{
+						int y = (prev.getY() + prev.getHeight() + cur.getY()) / 2;
+						g.drawLine(2, y, getWidth() - 2, y);
+					}
+
+					prev = cur;
+				}
+			}
+		};
+		grid.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		grid.setBorder(new EmptyBorder(6, 3, 2, 3));
+		grid.setAlignmentX(Component.LEFT_ALIGNMENT);
+		return grid;
+	}
+
+	/** (Re)creates the overview grid panels (sidebar and pop-out) for the given set of time-window rows. */
+	private void populateOverviewGrid(Set<TimeWindow> rows)
+	{
+		fillOverviewGrid(overviewGrid, overviewLabels, overviewWindowLabels, rows,
+				FontManager.getRunescapeSmallFont(), false);
+	}
+
+	/** Lays out the overview grid's header and one row of price/volume labels per selected time window. */
+	private void fillOverviewGrid(JPanel grid, Map<TimeWindow, JLabel[]> labels,
+			List<JLabel> windowLabels, Set<TimeWindow> rows, Font font, boolean expanded)
+	{
+		grid.removeAll();
+		labels.clear();
+		windowLabels.clear();
+
+		int vPad = expanded ? 7 : 2;
+		int hPad = expanded ? 9 : 1;
+		int hPadSep = expanded ? 16 : 3;
+		grid.setBorder(new EmptyBorder(expanded ? 10 : 6, expanded ? 14 : 3,
+				expanded ? 10 : 2, expanded ? 14 : 3));
+
+		int colAlign = expanded ? SwingConstants.RIGHT : SwingConstants.CENTER;
+
+		GridBagConstraints c = new GridBagConstraints();
+		c.fill = GridBagConstraints.HORIZONTAL;
+
+		String[] headers = {"", "High", "Low", "Avg", "Δ%", "Vol"};
+		Color[] headerColors = {
+				ColorScheme.LIGHT_GRAY_COLOR, COLOR_HIGH, COLOR_LOW, COLOR_AVG,
+				ColorScheme.LIGHT_GRAY_COLOR, COLOR_VOLUME};
+		for (int i = 0; i < headers.length; i++)
+		{
+			JLabel h = new JLabel(headers[i], i == 0 ? SwingConstants.CENTER : colAlign);
+			h.setForeground(headerColors[i]);
+			h.setFont(font);
+			c.gridx = i;
+			c.gridy = 0;
+			c.weightx = i == 0 ? 0 : 1;
+
+			c.insets = new Insets(vPad, i == 1 ? hPadSep : hPad, vPad, hPad);
+			grid.add(h, c);
+		}
+
+		JPanel headerDivider = new JPanel();
+		headerDivider.setBackground(DIVIDER_COLOR);
+		headerDivider.setPreferredSize(new Dimension(0, 1));
+		headerDivider.setMinimumSize(new Dimension(0, 1));
+		GridBagConstraints dc = new GridBagConstraints();
+		dc.gridx = 0;
+		dc.gridy = 1;
+		dc.gridwidth = headers.length;
+		dc.weightx = 1;
+		dc.fill = GridBagConstraints.HORIZONTAL;
+		dc.insets = new Insets(1, hPad, 2, hPad);
+		grid.add(headerDivider, dc);
+
+		int y = 2;
+		Color[] cellColors = {COLOR_HIGH, COLOR_LOW, COLOR_AVG, COLOR_VOLUME, COLOR_VOLUME};
+		for (TimeWindow w : OVERVIEW_WINDOWS)
+		{
+			if (!rows.contains(w))
+				continue;
+
+			String wLabel = expanded ? fullWindowLabel(w) : (w == TimeWindow.LIVE ? "5m" : w.toString());
+			JLabel windowLbl = new JLabel(wLabel, SwingConstants.RIGHT);
+			windowLbl.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+			windowLbl.setFont(font);
+			c.gridx = 0;
+			c.gridy = y;
+			c.weightx = 0;
+			c.anchor = GridBagConstraints.EAST;
+			c.insets = new Insets(vPad, hPad, vPad, hPad);
+			grid.add(windowLbl, c);
+			windowLabels.add(windowLbl);
+
+			JLabel[] cells = new JLabel[5];
+			for (int i = 0; i < 5; i++)
+			{
+				cells[i] = new JLabel("—", colAlign);
+				cells[i].setForeground(cellColors[i]);
+				cells[i].setFont(font);
+				c.gridx = i + 1;
+				c.gridy = y;
+				c.weightx = 1;
+				c.anchor = GridBagConstraints.CENTER;
+				c.insets = new Insets(vPad, i == 0 ? hPadSep : hPad, vPad, hPad);
+				grid.add(cells[i], c);
+			}
+
+			labels.put(w, cells);
+			y++;
+		}
+
+		grid.revalidate();
+		grid.repaint();
+	}
+
+	/** @return the long-form window name used by the pop-out overview grid. */
+	private static String fullWindowLabel(TimeWindow w)
+	{
+		return w.getLongLabel();
+	}
+
+	/** Fills the overview grid's cells with an item's per-window high/low/avg/volume/Δ% values. */
+	private void populateOverviewLabels(Map<TimeWindow, JLabel[]> labels, TrackedItem item, boolean full)
+	{
+		for (TimeWindow w : OVERVIEW_WINDOWS)
+		{
+			JLabel[] cells = labels.get(w);
+			if (cells == null)
+				continue;
+
+			if (w == TimeWindow.LIVE)
+			{
+				List<WikiRealtimePriceClient.PricePoint> s5 = item.getSeries5m();
+				WikiRealtimePriceClient.PricePoint last = s5.isEmpty() ? null : s5.get(s5.size() - 1);
+				long high = last == null ? 0 : last.getAvgHighPrice();
+				long low = last == null ? 0 : last.getAvgLowPrice();
+				long avg = last == null ? 0 : overviewMidpoint(last);
+				setPriceCell(cells[0], high, COLOR_HIGH, "High", TINT_HIGH, full);
+				setPriceCell(cells[1], low, COLOR_LOW, "Low", TINT_LOW, full);
+				setPriceCell(cells[2], avg, COLOR_AVG, "Avg", TINT_AVG, full);
+				setOverviewPlaceholder(cells[3]);
+				if (last == null)
+					setOverviewPlaceholder(cells[4]);
+				else
+					installVolumeValue(cells[4], last.getHighPriceVolume() + last.getLowPriceVolume(), full);
+
+				continue;
+			}
+
+			PriceStats s = item.getWindowStats().get(w);
+			setPriceCell(cells[0], s == null ? 0 : s.getHigh(), COLOR_HIGH, "High", TINT_HIGH, full);
+			setPriceCell(cells[1], s == null ? 0 : s.getLow(), COLOR_LOW, "Low", TINT_LOW, full);
+			setPriceCell(cells[2], s == null ? 0 : s.getAvg(), COLOR_AVG, "Avg", TINT_AVG, full);
+			applyDeltaPct(cells[3], item, w);
+
+			if (s == null)
+				setOverviewPlaceholder(cells[4]);
+			else
+				installVolumeValue(cells[4], s.getVolume(), full);
+		}
+	}
+
+	private final List<PopoutHandle> openPopouts = new ArrayList<>();
+	/** Re-fetch actions for open portfolio-chart pop-outs; run on every rebuild so they update live. */
+	private final List<Runnable> portfolioPopoutRefreshers = new ArrayList<>();
+
+	private boolean graphSmooth = true;
+	private PriceGraphPanel.LineSet graphLineSet = PriceGraphPanel.LineSet.ALL;
+	private PriceGraphPanel pricePopoutGraph;
+
+	/** Pushes fresh data for {@code item} into every open pop-out window. */
+	private void refreshPopouts(TrackedItem item)
+	{
+		for (PopoutHandle h : new ArrayList<>(openPopouts))
+			h.refresher.accept(item);
+	}
+
+	/** Disposes all open pop-out windows (e.g. when leaving the detail view). */
+	private void closePopouts()
+	{
+		for (PopoutHandle h : new ArrayList<>(openPopouts))
+			h.frame.dispose();
+
+		openPopouts.clear();
+	}
+
+	/**
+	 * Opens a non-modal pop-out window hosting {@code content}, registering its
+	 * refresher so live updates reach it and running {@code onClose} when dismissed.
+	 */
+	private void showPopout(String title, JComponent content, Consumer<TrackedItem> refresher, Runnable onClose)
+	{
+		JPanel holder = new JPanel(new BorderLayout());
+		holder.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		holder.setBorder(new EmptyBorder(8, 8, 8, 8));
+		holder.add(content, BorderLayout.CENTER);
+
+		JFrame frame = new JFrame(title);
+		frame.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
+		frame.setContentPane(holder);
+
+		TrackedItem current = currentItems.get(detailItemId);
+		if (current == null && previewItem != null && previewItem.getItemId() == detailItemId)
+			current = previewItem;
+
+		if (current != null)
+			refresher.accept(current);
+
+		frame.pack();
+		frame.setLocationRelativeTo(SwingUtilities.getWindowAncestor(this));
+
+		PopoutHandle handle = new PopoutHandle(frame, refresher, onClose);
+		openPopouts.add(handle);
+		frame.addWindowListener(new WindowAdapter()
+		{
+			@Override
+			public void windowClosed(WindowEvent e)
+			{
+				openPopouts.remove(handle);
+				if (onClose != null)
+					onClose.run();
+			}
+		});
+
+		frame.setVisible(true);
+	}
+
+	/** Opens an expanded chart pop-out mirroring (and kept in sync with) the in-panel graph. */
+	private void openGraphPopout(String title, PriceGraphPanel.Mode mode, PriceGraphPanel source)
+	{
+		PriceGraphPanel graph = new PriceGraphPanel(mode, true);
+		graph.setActiveWindow(source.getActiveWindow());
+		graph.setPreferredSize(new Dimension(640, mode == PriceGraphPanel.Mode.PRICE ? 460 : 360));
+
+		Runnable onClose = null;
+		if (mode == PriceGraphPanel.Mode.PRICE)
+		{
+			graph.setSmooth(graphSmooth);
+			graph.setSmoothListener(b ->
+			{
+				graphSmooth = b;
+				source.setSmooth(b);
+			});
+			graph.setLineSet(graphLineSet);
+			graph.setLineSetListener(set ->
+			{
+				graphLineSet = set;
+				source.setLineSet(set);
+			});
+			pricePopoutGraph = graph;
+			onClose = () ->
+			{
+				if (pricePopoutGraph == graph)
+					pricePopoutGraph = null;
+			};
+		}
+
+		Consumer<TrackedItem> refresher = it -> graph.setData(
+				it.getSeries5m(), it.getSeries1h(), it.getSeries6h(), it.getSeries24h(), it.getAvgPrice());
+		showPopout(title, graph, refresher, onClose);
+	}
+
+	/** Opens the price overview grid in a standalone pop-out window. */
+	private void openOverviewPopout()
+	{
+		Map<TimeWindow, JLabel[]> labels = new EnumMap<>(TimeWindow.class);
+		List<JLabel> windowLabels = new ArrayList<>();
+		JPanel grid = createOverviewGrid(labels, windowLabels, 12);
+
+		Font big = new Font(Font.MONOSPACED, Font.PLAIN, 18);
+
+		fillOverviewGrid(grid, labels, windowLabels, OverviewPreset.DETAILED.getWindows(), big, true);
+
+		JPanel top = new JPanel(new BorderLayout());
+		top.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		top.add(grid, BorderLayout.NORTH);
+		JScrollPane scroll = new JScrollPane(top);
+		scroll.setBorder(null);
+		scroll.getViewport().setBackground(ColorScheme.DARKER_GRAY_COLOR);
+
+		Consumer<TrackedItem> refresher = it -> populateOverviewLabels(labels, it, true);
+		showPopout("Price Overview", scroll, refresher, null);
+	}
+
+	/** Hides the acquisitions pop-out button while its pop-out window is already open. */
+	private void updateAcqPopoutButton()
+	{
+		if (acqPopoutButton == null)
+			return;
+
+		acqPopoutButton.setVisible(acqPopoutModel == null);
+	}
+
+	/** Opens the editable acquisitions (collection log) table in a standalone pop-out window. */
+	private void openCollectionLogPopout()
+	{
+		if (acqPopoutModel != null)
+			return;
+
+		acqPopoutModel = new AcquisitionsTableModel(config, onAcquisitionsEdited, () -> detailItemId, true);
+		acqPopoutTable = new JTable(acqPopoutModel);
+		final JTable table = acqPopoutTable;
+		final AcquisitionsTableModel model = acqPopoutModel;
+		table.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		table.setForeground(Color.WHITE);
+		table.setGridColor(PricewatchColors.TABLE_GRID);
+		table.setFillsViewportHeight(true);
+		table.getTableHeader().setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		table.getTableHeader().setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		table.getTableHeader().setReorderingAllowed(false);
+		model.setItem(currentItems.get(detailItemId));
+		applyAcqRenderers(table, model, true);
+
+		table.addMouseListener(new MouseAdapter()
+		{
+			@Override
+			public void mouseClicked(MouseEvent e)
+			{
+				if (e.getClickCount() == 2 && e.getButton() == MouseEvent.BUTTON1
+						&& table.rowAtPoint(e.getPoint()) < 0)
+				{
+					acqAddRow(table, model);
+				}
+			}
+		});
+
+		JScrollPane scroll = new JScrollPane(table);
+		scroll.getViewport().setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		scroll.setBorder(BorderFactory.createLineBorder(PricewatchColors.TABLE_GRID));
+		scroll.setPreferredSize(new Dimension(560, 380));
+		acqPopoutScroll = scroll;
+
+		JButton addBtn = acqTextButton("+ Add", Color.WHITE);
+		addBtn.addActionListener(e -> acqAddRow(table, model));
+
+		JButton removeBtn = acqTextButton("− Remove", Color.WHITE);
+		removeBtn.setEnabled(false);
+		removeBtn.addActionListener(e -> acqRemoveSelected(table, model));
+		table.getSelectionModel().addListSelectionListener(e ->
+				removeBtn.setEnabled(table.getSelectedRowCount() > 0));
+		table.getInputMap(JComponent.WHEN_FOCUSED)
+				.put(KeyStroke.getKeyStroke(KeyEvent.VK_DELETE, 0), "deleteSelectedRows");
+		table.getActionMap().put("deleteSelectedRows", new AbstractAction()
+		{
+			@Override
+			public void actionPerformed(ActionEvent e)
+			{
+				acqRemoveSelected(table, model);
+			}
+		});
+
+		JButton cleanBtn = new JButton(buildBrushIcon());
+		cleanBtn.setToolTipText("Remove all rows with quantity 0");
+		cleanBtn.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		cleanBtn.setForeground(Color.WHITE);
+		cleanBtn.setFocusPainted(false);
+		cleanBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		cleanBtn.setMargin(new Insets(2, 4, 2, 4));
+		cleanBtn.addActionListener(e -> acqClean(model));
+
+		JButton clearBtn = acqTextButton("Clear", COLOR_LOW);
+		clearBtn.setToolTipText("Remove every row from the collection log");
+		clearBtn.addActionListener(e -> acqClear());
+
+		JButton[] btns = {addBtn, removeBtn, cleanBtn, clearBtn};
+		int btnHeight = 0;
+		for (JButton b : btns)
+			btnHeight = Math.max(btnHeight, b.getPreferredSize().height);
+
+		for (JButton b : btns)
+			b.setPreferredSize(new Dimension(b.getPreferredSize().width, btnHeight));
+
+		JPanel buttons = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
+		buttons.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		buttons.setBorder(new EmptyBorder(4, 0, 0, 0));
+		for (JButton b : btns)
+			buttons.add(b);
+
+		JPanel content = new JPanel(new BorderLayout(0, 6));
+		content.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		content.add(scroll, BorderLayout.CENTER);
+		content.add(buttons, BorderLayout.SOUTH);
+
+		updateAcqPopoutButton();
+
+		showPopout("Item Collection Log", content, it -> { }, () ->
+		{
+			acqPopoutModel = null;
+			acqPopoutTable = null;
+			acqPopoutScroll = null;
+			updateAcqPopoutButton();
+		});
+	}
+
+	/** Builds a small flat text button used by the acquisitions pop-out toolbar. */
+	private JButton acqTextButton(String text, Color fg)
+	{
+		JButton b = new JButton(text);
+		b.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		b.setForeground(fg);
+		b.setFocusPainted(false);
+		b.setFont(FontManager.getRunescapeSmallFont());
+		b.setMargin(new Insets(2, 5, 2, 5));
+		b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		return b;
+	}
+
+	/** Appends a new empty acquisition row to the table and scrolls it into view. */
+	private void acqAddRow(JTable table, AcquisitionsTableModel model)
+	{
+		TrackedItem t = currentItems.get(detailItemId);
+		if (t == null)
+			return;
+
+		long price = t.getAvgPrice() > 0 ? t.getAvgPrice() : 0;
+		t.getAcquisitions().add(new AcquisitionRecord(0, price, null, AcquisitionSource.MANUAL));
+		model.fireTableDataChanged();
+		table.revalidate();
+		onAcquisitionsEdited.accept(detailItemId);
+		JScrollPane sp = (JScrollPane) SwingUtilities.getAncestorOfClass(JScrollPane.class, table);
+		if (sp != null)
+		{
+			SwingUtilities.invokeLater(() ->
+			{
+				JScrollBar bar = sp.getVerticalScrollBar();
+				bar.setValue(bar.getMaximum());
+			});
+		}
+
+		int newRow = model.getRowCount() - 1;
+		if (newRow >= 0 && table.editCellAt(newRow, 0))
+		{
+			table.changeSelection(newRow, 0, false, false);
+			Component editor = table.getEditorComponent();
+			if (editor != null)
+				editor.requestFocusInWindow();
+		}
+	}
+
+	/** Removes the selected acquisition rows and commits the change. */
+	private void acqRemoveSelected(JTable table, AcquisitionsTableModel model)
+	{
+		TrackedItem t = currentItems.get(detailItemId);
+		if (t == null)
+			return;
+
+		if (table.isEditing())
+
+			table.getCellEditor().stopCellEditing();
+
+		int[] selected = table.getSelectedRows();
+		if (selected.length == 0)
+			return;
+
+		List<AcquisitionRecord> records = t.getAcquisitions();
+		Arrays.sort(selected);
+		for (int i = selected.length - 1; i >= 0; i--)
+		{
+			if (selected[i] >= 0 && selected[i] < records.size())
+				records.remove(selected[i]);
+		}
+
+		model.fireTableDataChanged();
+		table.revalidate();
+		onAcquisitionsEdited.accept(detailItemId);
+	}
+
+	/** Consolidates the acquisitions log, merging like rows and dropping empty ones. */
+	private void acqClean(AcquisitionsTableModel model)
+	{
+		TrackedItem t = currentItems.get(detailItemId);
+		if (t == null)
+			return;
+
+		if (t.getAcquisitions().removeIf(r -> r.getQuantity() == 0))
+		{
+			model.fireTableDataChanged();
+			onAcquisitionsEdited.accept(detailItemId);
+		}
+	}
+
+	/** Clears all acquisitions for the current item after confirmation, via the plugin callback. */
+	private void acqClear()
+	{
+		TrackedItem t = currentItems.get(detailItemId);
+		if (t == null || t.getAcquisitions().isEmpty())
+			return;
+
+		int choice = JOptionPane.showConfirmDialog(
+				PricewatchPanel.this,
+				"Clear the entire collection log for this item?",
+				"Clear Collection Log",
+				JOptionPane.YES_NO_OPTION,
+				JOptionPane.WARNING_MESSAGE);
+		if (choice != JOptionPane.YES_OPTION)
+			return;
+
+		if (onClearAcquisitions != null)
+
+			onClearAcquisitions.accept(detailItemId);
+	}
+
+	/** Paints the small box-with-arrow "open in new window" icon used by pop-out buttons. */
+	private Icon buildPopoutIcon()
+	{
+		int s = 11;
+		BufferedImage img = new BufferedImage(s, s, BufferedImage.TYPE_INT_ARGB);
+		Graphics2D g = img.createGraphics();
+		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+		g.setColor(ColorScheme.LIGHT_GRAY_COLOR);
+		g.setStroke(new BasicStroke(1f));
+
+		g.drawRect(0, 4, 6, 6);
+		g.drawLine(4, 6, s - 1, 0);
+		g.drawLine(s - 5, 0, s - 1, 0);
+		g.drawLine(s - 1, 0, s - 1, 4);
+		g.dispose();
+		return new ImageIcon(img);
+	}
+
+	/** Paints the small line-chart icon used to open the portfolio value chart. */
+	private Icon buildChartIcon()
+	{
+		int s = 11;
+		BufferedImage img = new BufferedImage(s, s, BufferedImage.TYPE_INT_ARGB);
+		Graphics2D g = img.createGraphics();
+		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+		g.setColor(ColorScheme.LIGHT_GRAY_COLOR);
+		g.setStroke(new BasicStroke(1f));
+
+		g.drawLine(1, 0, 1, s - 1);
+		g.drawLine(1, s - 1, s - 1, s - 1);
+		g.drawLine(2, 8, 4, 5);
+		g.drawLine(4, 5, 6, 7);
+		g.drawLine(6, 7, 9, 2);
+		g.dispose();
+		return new ImageIcon(img);
+	}
+
+	/** Builds a borderless pop-out button that runs the given action when clicked. */
+	private JButton buildPopoutButton(Runnable onClick)
+	{
+		return buildIconButton(buildPopoutIcon(), "Open in a larger window", onClick);
+	}
+
+	/** Builds a borderless icon button with the given icon, tooltip, click action, and a hover highlight. */
+	private JButton buildIconButton(Icon icon, String tooltip, Runnable onClick)
+	{
+		JButton btn = new JButton(icon);
+		btn.setToolTipText(tooltip);
+		btn.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		btn.setFocusPainted(false);
+		btn.setBorder(new EmptyBorder(2, 4, 2, 4));
+		btn.setContentAreaFilled(false);
+		btn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		btn.addActionListener(e -> onClick.run());
+		btn.addMouseListener(new MouseAdapter()
+		{
+			@Override
+			public void mouseEntered(MouseEvent e)
+			{
+				btn.setBackground(ColorScheme.DARK_GRAY_HOVER_COLOR);
+				btn.setContentAreaFilled(true);
+			}
+
+			@Override
+			public void mouseExited(MouseEvent e)
+			{
+				btn.setContentAreaFilled(false);
+				btn.setBackground(ColorScheme.DARK_GRAY_COLOR);
+			}
+		});
+		return btn;
+	}
+
+	/** Wires the per-column cell editors/renderers on the notifications table to the current metric's input type. */
+	private void applyNotificationRenderers()
+	{
+		Font f = FontManager.getRunescapeSmallFont();
+		NotifCellRenderer renderer = new NotifCellRenderer();
+
+		JComboBox<NotificationMetric> metricCombo = new JComboBox<>(NotificationMetric.values());
+		metricCombo.setFont(f);
+		metricCombo.setRenderer(new DefaultListCellRenderer()
+		{
+			@Override
+			public Component getListCellRendererComponent(JList<?> list, Object value, int index,
+					boolean isSelected, boolean cellHasFocus)
+			{
+				super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+				if (value instanceof NotificationMetric)
+					setText(((NotificationMetric) value).getDisplayName());
+
+				setFont(f);
+				return this;
+			}
+		});
+		JComboBox<TimeWindow> timeCombo = new JComboBox<>(OVERVIEW_WINDOWS);
+		timeCombo.setFont(f);
+		JComboBox<NotificationOperation> opCombo = new JComboBox<>(NotificationOperation.values());
+		opCombo.setFont(f);
+
+		TableColumnModel columns = notificationsTable.getColumnModel();
+		columns.getColumn(0).setCellEditor(new DefaultCellEditor(metricCombo));
+		columns.getColumn(1).setCellEditor(new DefaultCellEditor(timeCombo));
+		columns.getColumn(2).setCellEditor(new DefaultCellEditor(opCombo));
+		columns.getColumn(3).setCellEditor(new NotificationValueEditor(currentItems, () -> detailItemId));
+
+		for (int i = 0; i < notificationsTable.getColumnCount(); i++)
+		{
+			if (notificationsTable.getColumnClass(i) != Boolean.class)
+				columns.getColumn(i).setCellRenderer(renderer);
+		}
+
+		columns.getColumn(notificationsTable.getColumnCount() - 1).setMaxWidth(28);
+
+		TableCellRenderer hr = notificationsTable.getTableHeader().getDefaultRenderer();
+		if (hr instanceof DefaultTableCellRenderer)
+			((DefaultTableCellRenderer) hr).setHorizontalAlignment(SwingConstants.CENTER);
+	}
+
+	/** Builds the market-info section (buy limit, GE value, volatility, liquidity, 30-day range, etc.). */
+	private JPanel buildMarketInfoBlock()
+	{
+		JPanel block = new JPanel()
+		{
+			@Override
+			public Dimension getMaximumSize()
+			{
+				return new Dimension(Integer.MAX_VALUE, getPreferredSize().height);
+			}
+		};
+		block.setLayout(new BoxLayout(block, BoxLayout.Y_AXIS));
+		block.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		block.setBorder(new EmptyBorder(6, 8, 6, 8));
+		block.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+		miBuyLimit.setHorizontalAlignment(SwingConstants.CENTER);
+		miGeTax.setHorizontalAlignment(SwingConstants.CENTER);
+		miLastBought.setHorizontalAlignment(SwingConstants.CENTER);
+		miLastSold.setHorizontalAlignment(SwingConstants.CENTER);
+		miVolatility.setHorizontalAlignment(SwingConstants.CENTER);
+		miLiquidity.setHorizontalAlignment(SwingConstants.CENTER);
+
+		block.add(buildMarketInfoPair("Buy Limit", miBuyLimit, "GE Tax", miGeTax));
+		block.add(Box.createVerticalStrut(6));
+		block.add(buildMarketInfoPair("Last Bought", miLastBought, "Last Sold", miLastSold));
+		block.add(Box.createVerticalStrut(6));
+		block.add(buildMarketInfoPair("Volatility", miVolatility, "Liquidity", miLiquidity));
+
+		block.add(Box.createVerticalStrut(8));
+		JPanel rangeSep = new JPanel();
+		rangeSep.setBackground(OVERVIEW_ROW_DIVIDER);
+		rangeSep.setAlignmentX(Component.LEFT_ALIGNMENT);
+		rangeSep.setPreferredSize(new Dimension(0, 1));
+		rangeSep.setMaximumSize(new Dimension(Integer.MAX_VALUE, 1));
+		block.add(rangeSep);
+		block.add(Box.createVerticalStrut(8));
+
+		JLabel rangeTitle = new JLabel("30 Day Price Range", SwingConstants.CENTER);
+		rangeTitle.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		rangeTitle.setFont(FontManager.getRunescapeSmallFont());
+		rangeTitle.setAlignmentX(Component.LEFT_ALIGNMENT);
+		rangeTitle.setMaximumSize(new Dimension(Integer.MAX_VALUE, rangeTitle.getPreferredSize().height));
+		block.add(rangeTitle);
+		block.add(Box.createVerticalStrut(4));
+
+		rangePositionLabel.setHorizontalAlignment(SwingConstants.CENTER);
+		rangePositionLabel.setFont(FontManager.getRunescapeSmallFont());
+		rangePositionLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+		rangePositionLabel.setMaximumSize(new Dimension(Integer.MAX_VALUE,
+				rangePositionLabel.getPreferredSize().height));
+		block.add(rangePositionLabel);
+		block.add(Box.createVerticalStrut(3));
+
+		priceRangeBar = new PriceRangeBar();
+		block.add(priceRangeBar);
+
+		JPanel pressureSep = new JPanel();
+		pressureSep.setBackground(OVERVIEW_ROW_DIVIDER);
+		pressureSep.setAlignmentX(Component.LEFT_ALIGNMENT);
+		pressureSep.setPreferredSize(new Dimension(0, 1));
+		pressureSep.setMaximumSize(new Dimension(Integer.MAX_VALUE, 1));
+		block.add(Box.createVerticalStrut(8));
+		block.add(pressureSep);
+		block.add(Box.createVerticalStrut(8));
+
+		JLabel pressureTitle = new JLabel("Buy/Sell Pressure", SwingConstants.CENTER);
+		pressureTitle.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		pressureTitle.setFont(FontManager.getRunescapeSmallFont());
+		pressureTitle.setAlignmentX(Component.LEFT_ALIGNMENT);
+		pressureTitle.setMaximumSize(new Dimension(Integer.MAX_VALUE, pressureTitle.getPreferredSize().height));
+		block.add(pressureTitle);
+		block.add(Box.createVerticalStrut(4));
+
+		pressureMarketLabel.setHorizontalAlignment(SwingConstants.CENTER);
+		pressureMarketLabel.setFont(FontManager.getRunescapeSmallFont());
+		pressureMarketLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+		pressureMarketLabel.setMaximumSize(new Dimension(Integer.MAX_VALUE,
+				pressureMarketLabel.getPreferredSize().height));
+		block.add(pressureMarketLabel);
+		block.add(Box.createVerticalStrut(3));
+
+		buySellBar = new BuySellBar();
+		block.add(buySellBar);
+		block.add(Box.createVerticalStrut(3));
+
+		buyPressureLabel.setFont(FontManager.getRunescapeSmallFont());
+		buyPressureLabel.setForeground(COLOR_HIGH);
+		sellPressureLabel.setFont(FontManager.getRunescapeSmallFont());
+		sellPressureLabel.setForeground(COLOR_LOW);
+		sellPressureLabel.setHorizontalAlignment(SwingConstants.RIGHT);
+
+		JPanel pressureRow = new JPanel(new BorderLayout());
+		pressureRow.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		pressureRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+		pressureRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, buyPressureLabel.getPreferredSize().height));
+		pressureRow.add(buyPressureLabel, BorderLayout.WEST);
+		pressureRow.add(sellPressureLabel, BorderLayout.EAST);
+		block.add(pressureRow);
+
+		return block;
+	}
+
+	/** Builds a two-column grid pairing two captioned values side by side (Market Info / alch rows). */
+	private JPanel buildMarketInfoPair(String leftLabel, JLabel leftValue, String rightLabel, JLabel rightValue)
+	{
+		JPanel grid = new JPanel(new GridBagLayout());
+		grid.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		grid.setAlignmentX(Component.LEFT_ALIGNMENT);
+		GridBagConstraints c = new GridBagConstraints();
+		c.fill = GridBagConstraints.HORIZONTAL;
+		c.weightx = 1;
+		c.insets = new Insets(1, 4, 1, 4);
+
+		JLabel lh = new JLabel(leftLabel, SwingConstants.CENTER);
+		lh.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		lh.setFont(FontManager.getRunescapeSmallFont());
+		JLabel rh = new JLabel(rightLabel, SwingConstants.CENTER);
+		rh.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		rh.setFont(FontManager.getRunescapeSmallFont());
+
+		leftValue.setFont(FontManager.getRunescapeSmallFont());
+		leftValue.setForeground(Color.WHITE);
+		rightValue.setFont(FontManager.getRunescapeSmallFont());
+		rightValue.setForeground(Color.WHITE);
+
+		c.gridx = 0;
+		c.gridy = 0;
+		grid.add(lh, c);
+		c.gridx = 1;
+		c.gridy = 0;
+		grid.add(rh, c);
+		c.gridx = 0;
+		c.gridy = 1;
+		grid.add(leftValue, c);
+		c.gridx = 1;
+		c.gridy = 1;
+		grid.add(rightValue, c);
+		return grid;
+	}
+
+	private static final String WIKI_BASE = "https://oldschool.runescape.wiki/w/";
+	private static final String PRICES_BASE = "https://prices.runescape.wiki/osrs/item/";
+
+	/** Builds the Links detail section's content: Wiki and Live Prices buttons for the current item. */
+	private JPanel buildLinksBlock()
+	{
+		JPanel block = new JPanel(new GridLayout(1, 2, 6, 0))
+		{
+			@Override
+			public Dimension getMaximumSize()
+			{
+				return new Dimension(Integer.MAX_VALUE, getPreferredSize().height);
+			}
+		};
+		block.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		block.setBorder(new EmptyBorder(4, 8, 6, 8));
+		block.setAlignmentX(Component.LEFT_ALIGNMENT);
+		block.add(buildLinkButton("Wiki", "Open the OSRS Wiki page for this item", this::openWikiLink));
+		block.add(buildLinkButton("Live Prices", "Open the live prices page for this item", this::openPricesLink));
+
+		return block;
+	}
+
+	/** Builds a detail-view link button that runs the given action when clicked. */
+	private JButton buildLinkButton(String text, String tooltip, Runnable onClick)
+	{
+		JButton button = new JButton(text);
+		button.setFont(FontManager.getRunescapeSmallFont());
+		button.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		button.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		button.setFocusPainted(false);
+		button.setToolTipText(tooltip);
+		button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+		button.addActionListener(e -> onClick.run());
+
+		return button;
+	}
+
+	/** Opens the OSRS Wiki page for the item currently shown in the detail view. */
+	private void openWikiLink()
+	{
+		TrackedItem item = currentDetailItem();
+		if (item == null)
+			return;
+
+		String name = URLEncoder.encode(item.getName(), StandardCharsets.UTF_8).replace("+", "_");
+		LinkBrowser.browse(WIKI_BASE + name);
+	}
+
+	/** Opens the wiki realtime prices page for the item currently shown in the detail view. */
+	private void openPricesLink()
+	{
+		TrackedItem item = currentDetailItem();
+		if (item == null)
+			return;
+
+		LinkBrowser.browse(PRICES_BASE + item.getItemId());
+	}
+
+	/** @return the item currently shown in the detail view (a tracked item or the transient preview), or null. */
+	private TrackedItem currentDetailItem()
+	{
+		TrackedItem item = currentItems.get(detailItemId);
+		if (item == null && previewItem != null && previewItem.getItemId() == detailItemId)
+			item = previewItem;
+
+		return item;
+	}
+
+	/** Builds the alch-info section (high/low alch values and the high-alch profit estimate). */
+	private JPanel buildAlchBlock()
+	{
+		JPanel block = new JPanel()
+		{
+			@Override
+			public Dimension getMaximumSize()
+			{
+				return new Dimension(Integer.MAX_VALUE, getPreferredSize().height);
+			}
+		};
+		block.setLayout(new BoxLayout(block, BoxLayout.Y_AXIS));
+		block.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		block.setBorder(new EmptyBorder(6, 8, 6, 8));
+		block.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+		haValue.setHorizontalAlignment(SwingConstants.CENTER);
+		haProfit.setHorizontalAlignment(SwingConstants.CENTER);
+		laValue.setHorizontalAlignment(SwingConstants.CENTER);
+		laProfit.setHorizontalAlignment(SwingConstants.CENTER);
+
+		block.add(buildMarketInfoPair("High Alchemy Value", haValue, "Profit", haProfit));
+		block.add(Box.createVerticalStrut(6));
+		block.add(buildMarketInfoPair("Low Alchemy Value", laValue, "Profit", laProfit));
+
+		JLabel estPrefix = new JLabel("Est. Profit:");
+		estPrefix.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		estPrefix.setFont(FontManager.getRunescapeSmallFont());
+		alchEstProfit.setFont(FontManager.getRunescapeSmallFont());
+		alchEstProfit.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+
+		alchEstProfitRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+		alchEstProfitRow.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		alchEstProfitRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+		alchEstProfitRow.setBorder(BorderFactory.createCompoundBorder(
+				BorderFactory.createCompoundBorder(
+						new EmptyBorder(6, 0, 0, 0),
+						new MatteBorder(1, 0, 0, 0, DIVIDER_COLOR)),
+				new EmptyBorder(4, 0, 0, 0)));
+		alchEstProfitRow.add(estPrefix);
+		alchEstProfitRow.add(alchEstProfit);
+		block.add(alchEstProfitRow);
+		return block;
+	}
+
+	/** Paints the small left-pointing triangle used by the detail view's Back button. */
+	private Icon buildLeftArrowIcon()
+	{
+		int w = 9;
+		int h = 10;
+		BufferedImage img = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
+		Graphics2D g = img.createGraphics();
+		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+		g.setColor(Color.WHITE);
+		int midY = h / 2;
+		int[] xs = {0, w - 1, w - 1};
+		int[] ys = {midY, 0, h - 1};
+		g.fillPolygon(xs, ys, xs.length);
+		g.dispose();
+		return new ImageIcon(img);
+	}
+
+	/** Loads the bundled {@code eye.png} scaled to a square icon for the view-only button. */
+	private Icon buildEyeIcon(int size)
 	{
 		try
 		{
-			final BufferedImage img = ImageUtil.loadImageResource(getClass(), "eye.png");
-
+			BufferedImage img = ImageUtil.loadImageResource(getClass(), "eye.png");
 			return new ImageIcon(img.getScaledInstance(size, size, Image.SCALE_SMOOTH));
 		}
-		catch (RuntimeException ex)
+		catch (Exception ex)
 		{
 			return new ImageIcon(new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB));
 		}
 	}
 
-	/**
-	 * @return the item's stats for a window, falling back to its current prices when
-	 *         the series behind that window has not been fetched yet
-	 */
-	private static PriceStats statsFor(WatchedItem item, TimeWindow window)
+	/** Loads the bundled {@code broom.png} scaled to a 12px icon for the clear-acquisitions button. */
+	private Icon buildBrushIcon()
 	{
-		final PriceStats stats = item.getWindowStats().get(window);
-		if (stats != null)
-			return stats;
+		try
+		{
+			BufferedImage img = ImageUtil.loadImageResource(getClass(), "broom.png");
+			return new ImageIcon(img.getScaledInstance(12, 12, Image.SCALE_SMOOTH));
+		}
+		catch (Exception ex)
+		{
+			return new ImageIcon(new BufferedImage(12, 12, BufferedImage.TYPE_INT_ARGB));
+		}
+	}
 
-		return new PriceStats(item.getHighPrice(), item.getLowPrice(), item.getAvgPrice(), 0);
+	/** Builds a centred bold section title, optionally topped with a divider rule. */
+	private JLabel buildDetailSectionTitle(String text, boolean withDivider)
+	{
+		JLabel title = new JLabel(text, SwingConstants.CENTER)
+		{
+			@Override
+			public Dimension getMaximumSize()
+			{
+				return new Dimension(Integer.MAX_VALUE, getPreferredSize().height);
+			}
+		};
+		title.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		title.setFont(FontManager.getRunescapeBoldFont());
+		title.setAlignmentX(Component.LEFT_ALIGNMENT);
+		if (withDivider)
+			title.setBorder(BorderFactory.createCompoundBorder(
+					BorderFactory.createCompoundBorder(
+							new EmptyBorder(10, 0, 0, 0),
+							new MatteBorder(1, 0, 0, 0, DIVIDER_COLOR)),
+					new EmptyBorder(10, 0, 6, 0)));
+		else
+			title.setBorder(new EmptyBorder(10, 0, 6, 0));
+
+		return title;
+	}
+
+	/** Switches to the detail card for an item, requesting its full data and populating the view. */
+	private void showDetail(int itemId)
+	{
+		TrackedItem item = currentItems.get(itemId);
+		if (item == null)
+			return;
+
+		previewItem = null;
+		detailItemId = itemId;
+		detailLoadTimedOut = false;
+		populateDetail(item);
+		footerPanel.setVisible(false);
+		applyDetailCard();
+		if (onRequestDetailData != null)
+			onRequestDetailData.accept(itemId);
 	}
 
 	/**
-	 * What the price line should show: which window's figures, which of the four
-	 * columns, and whether movement is tinted.
+	 * Opens a read-only preview of an untracked item in the detail view. Unlike
+	 * {@link #showDetail}, the item is not in the tracked list; the plugin supplies
+	 * its price/history data directly and the tracked-only sections stay hidden.
 	 */
-	static final class PriceLineOptions
+	public void showPreview(TrackedItem item)
 	{
-		private final TimeWindow window;
-		private final boolean high;
-		private final boolean low;
-		private final boolean avg;
-		private final boolean volume;
-		private final PriceIndicatorMode indicator;
-
-		/**
-		 * Captures the current display settings.
-		 *
-		 * @param config the plugin settings to read
-		 */
-		PriceLineOptions(PricewatchConfig config)
-		{
-			this(config.priceLine(), config.showColHigh(), config.showColLow(),
-					config.showColAvg(), config.showColVolume(), config.priceChangeIndicator());
-		}
-
-		/**
-		 * Explicit constructor, used by the tests.
-		 *
-		 * @param window    which window's figures to show
-		 * @param high      show the high price
-		 * @param low       show the low price
-		 * @param avg       show the average price
-		 * @param volume    show traded volume
-		 * @param indicator when to tint a figure by its movement
-		 */
-		PriceLineOptions(TimeWindow window, boolean high, boolean low, boolean avg, boolean volume,
-				PriceIndicatorMode indicator)
-		{
-			this.window = window;
-			this.high = high;
-			this.low = low;
-			this.avg = avg;
-			this.volume = volume;
-			this.indicator = indicator;
-		}
-
-		/** @return whether any column at all is switched on. */
-		boolean anyColumn()
-		{
-			return high || low || avg || volume;
-		}
-
-		/**
-		 * Picks the tint for a figure that moved by {@code delta} since the last
-		 * refresh: green up, red down, and — under {@link PriceIndicatorMode#ALL}
-		 * only — a neutral grey for a figure that held steady.
-		 *
-		 * @param delta the sign of the movement, or 0 when unchanged
-		 * @return an HTML colour, or {@code null} to leave the figure untinted
-		 */
-		String colourFor(int delta)
-		{
-			if (indicator == PriceIndicatorMode.OFF)
-				return null;
-
-			if (delta > 0)
-				return UP_HEX;
-
-			if (delta < 0)
-				return DOWN_HEX;
-
-			return indicator == PriceIndicatorMode.ALL ? FLAT_HEX : null;
-		}
-
-		/**
-		 * @param delta   the sign of the movement, or 0 when unchanged
-		 * @param resting the colour the figure carries when it has not moved
-		 * @return the movement tint when one applies, else the figure's resting colour
-		 */
-		Color movementColour(int delta, Color resting)
-		{
-			final String hex = colourFor(delta);
-
-			return hex == null ? resting : Color.decode(hex);
-		}
+		previewItem = item;
+		detailItemId = item.getItemId();
+		detailLoadTimedOut = false;
+		populateDetail(item);
+		footerPanel.setVisible(false);
+		applyDetailCard();
 	}
 
-	/** Where one rendered row sits, so a drop point can be resolved back to an item. */
-	private static final class RowRef
+	/** Returns to the main item list, closing any open pop-outs. */
+	private void showMain()
 	{
-		private final JPanel row;
-		private final int itemId;
-		private final String groupKey;
-
-		/**
-		 * @param row      the rendered row component
-		 * @param itemId   the item it shows
-		 * @param groupKey the group it was drawn under
-		 */
-		RowRef(JPanel row, int itemId, String groupKey)
-		{
-			this.row = row;
-			this.itemId = itemId;
-			this.groupKey = groupKey;
-		}
+		detailItemId = -1;
+		previewItem = null;
+		stopDetailLoading();
+		closePopouts();
+		footerPanel.setVisible(true);
+		cardLayout.show(cardsHost, CARD_MAIN);
 	}
 
 	/**
-	 * Drags a row onto another to reorder the watchlist, and onto a row in another
-	 * group to move it there.
-	 *
-	 * <p>Only the release point matters — there is no drag ghost and no autoscroll.
-	 * The drop resolves to whichever row sits under the cursor, and the moved item
-	 * lands immediately before it.
+	 * Shows either the spinner placeholder or the populated detail view for the
+	 * currently open item, depending on whether its prices are still loading.
+	 * A view-only preview shows the spinner until its prices arrive, its load
+	 * fails, or the safety timeout fires; everything else shows immediately.
 	 */
-	private final class DragListener extends MouseAdapter
+	private void applyDetailCard()
 	{
-		private final int itemId;
-		private final String groupKey;
-
-		/**
-		 * @param itemId   the item this handle belongs to
-		 * @param groupKey the group it is currently drawn under
-		 */
-		DragListener(int itemId, String groupKey)
+		TrackedItem shown = shownDetailItem();
+		if (isDetailLoading(shown))
 		{
-			this.itemId = itemId;
-			this.groupKey = groupKey;
+			detailSpinner.start();
+			if (!detailLoadTimeout.isRunning())
+				detailLoadTimeout.restart();
+
+			cardLayout.show(cardsHost, CARD_DETAIL_LOADING);
 		}
-
-		@Override
-		public void mouseReleased(MouseEvent e)
+		else
 		{
-			final RowRef target = rowAt(
-					SwingUtilities.convertPoint((JComponent) e.getSource(), e.getPoint(), list));
-
-			if (target == null || target.itemId == itemId)
-				return;
-
-			if (!target.groupKey.equals(groupKey))
-				actions.setItemCategory(itemId, categoryFor(target.groupKey));
-
-			actions.reorderWatchlist(WatchlistReorder.moveBefore(watchedIds, itemId, target.itemId));
+			stopDetailLoading();
+			cardLayout.show(cardsHost, CARD_DETAIL);
 		}
 	}
 
-	/** @return the rendered row containing a point in the list's coordinate space, or {@code null}. */
-	private RowRef rowAt(Point point)
+	/** Stops the spinner animation and cancels the pending load-timeout, if any. */
+	private void stopDetailLoading()
 	{
-		return rowRefs.stream()
-				.filter(ref -> ref.row.getBounds().contains(point))
-				.findFirst()
-				.orElse(null);
+		detailSpinner.stop();
+		detailLoadTimeout.stop();
+	}
+
+	/** @return the item currently backing the detail view (tracked or preview), or {@code null}. */
+	private TrackedItem shownDetailItem()
+	{
+		if (previewItem != null && previewItem.getItemId() == detailItemId)
+			return previewItem;
+
+		return currentItems.get(detailItemId);
+	}
+
+	/** @return whether {@code item} is a tradeable preview whose prices have not yet loaded (or failed). */
+	private boolean isDetailLoading(TrackedItem item)
+	{
+		return item != null
+				&& item.getMode() == TrackItemMode.VIEW
+				&& item.isTradeable()
+				&& !item.hasPrices()
+				&& !item.isPriceLoadFailed()
+				&& !detailLoadTimedOut;
+	}
+
+	/** Fills {@link #detailLoadingCard} with a centered spinner and caption. */
+	private void buildDetailLoadingCard()
+	{
+		detailLoadingCard.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		detailLoadingCard.setBorder(new EmptyBorder(10, 10, 10, 10));
+
+		JPanel inner = new JPanel();
+		inner.setLayout(new BoxLayout(inner, BoxLayout.Y_AXIS));
+		inner.setBackground(ColorScheme.DARK_GRAY_COLOR);
+
+		detailSpinner.setAlignmentX(Component.CENTER_ALIGNMENT);
+
+		JLabel caption = new JLabel("Loading item data…");
+		caption.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		caption.setFont(FontManager.getRunescapeSmallFont());
+		caption.setAlignmentX(Component.CENTER_ALIGNMENT);
+
+		inner.add(detailSpinner);
+		inner.add(Box.createVerticalStrut(10));
+		inner.add(caption);
+
+		detailLoadingCard.add(inner);
+	}
+
+	/** Prompts for confirmation, then clears all tracked items via the plugin callback. */
+	private void confirmAndClearAll()
+	{
+		int count = currentItems.size();
+		if (count == 0)
+			return;
+
+		int choice = JOptionPane.showConfirmDialog(
+				this,
+				"Remove all " + count + " tracked item" + (count == 1 ? "" : "s")
+						+ ", including their notifications and collection log?\nThis cannot be undone.",
+				"Clear tracked items",
+				JOptionPane.YES_NO_OPTION,
+				JOptionPane.WARNING_MESSAGE);
+		if (choice == JOptionPane.YES_OPTION && onClearAll != null)
+			onClearAll.run();
 	}
 
 	/**
-	 * @return the category a group key represents, or {@code null} for the two special
-	 *         groups — dropping into Favourites or Uncategorised clears the category
-	 *         rather than inventing one named after the group
+	 * Sets the current examine text on the description area. The {@link JTextArea} line-wraps to its
+	 * own laid-out width, so no width measurement is needed and it re-wraps responsively on resize.
 	 */
-	private static String categoryFor(String groupKey)
+	private void applyExamineWrap()
 	{
-		if (CategoryState.FAVORITES_KEY.equals(groupKey) || CategoryState.UNCATEGORIZED_KEY.equals(groupKey))
-			return null;
+		if (detailExamineText == null)
+			return;
 
-		return groupKey;
+		detailDescriptionArea.setText(detailExamineText);
 	}
 
-	/** Toggles a group's collapsed state when its header is clicked. */
-	private final class CollapseListener extends MouseAdapter
+	/**
+	 * Fills every detail section from an item's current state: header name/icon/quantity,
+	 * item and collection values, overview grid, charts, market info (times, volatility,
+	 * liquidity, range, pressure), alch figures, notifications, and the acquisitions log.
+	 * Called whenever the shown item's data changes.
+	 */
+	private void populateDetail(TrackedItem item)
 	{
-		private final WatchlistGrouping.Group group;
+		final boolean viewOnly = item.getMode() == TrackItemMode.VIEW;
 
-		/**
-		 * @param group the group this header belongs to
-		 */
-		CollapseListener(WatchlistGrouping.Group group)
+		rebuildOverviewGrid();
+		applyDetailSectionLayout();
+
+		AsyncBufferedImage icon = itemManager.getImage(item.getItemId(), item.iconStackSize(), item.isStackable());
+		icon.addTo(detailIconLabel);
+		EllipsisText.set(detailNameLabel, item.getName());
+
+		int detailQty = item.getQuantity();
+		detailQtyLabel.setText("Qty: " + GpFormat.shortValue(detailQty));
+		detailQtyLabel.setToolTipText(NUMBER_FORMAT.format(detailQty));
+		detailQtyLabel.setVisible(!viewOnly);
+
+		final String examine = examineLookup == null ? null : examineLookup.apply(item.getItemId());
+		final boolean hasExamine = examine != null && !examine.isEmpty();
+		detailExamineText = hasExamine ? examine : null;
+		applyExamineWrap();
+		detailDescriptionArea.setVisible(hasExamine);
+
+		final boolean hasPrices = item.hasPrices();
+		final boolean showMarket = item.isTradeable();
+		final ValueFormat full = ValueFormat.FULL;
+
+		icvHigh.setText("High: " + (hasPrices ? formatTotalGp(item.getHighPrice(), full) : "—"));
+		icvLow.setText("Low: " + (hasPrices ? formatTotalGp(item.getLowPrice(), full) : "—"));
+		icvAvg.setText("Average: " + (hasPrices ? formatTotalGp(item.getAvgPrice(), full) : "—"));
+		long vol24 = windowVolume(item, TimeWindow.H24);
+		icvVolume.setText("Volume (24h): " + (vol24 > 0 ? NUMBER_FORMAT.format(vol24) : "—"));
+
+		int colQty = item.getRecordQuantitySum();
+		ccvSection.setVisible(showMarket && colQty > 0);
+		if (colQty > 0)
 		{
-			this.group = group;
+			long cHigh = (long) colQty * item.getHighPrice();
+			long cLow = (long) colQty * item.getLowPrice();
+			long cAvg = (long) colQty * item.getAvgPrice();
+			ccvHigh.setText("High: " + (hasPrices ? formatTotalGp(cHigh, full) : "—"));
+			ccvLow.setText("Low: " + (hasPrices ? formatTotalGp(cLow, full) : "—"));
+			ccvAvg.setText("Average: " + (hasPrices ? formatTotalGp(cAvg, full) : "—"));
+			ccvQuantity.setText("Quantity: " + NUMBER_FORMAT.format(colQty));
+			long estProfit = cAvg - item.getCostBasis();
+			String sign = estProfit > 0 ? "+" : "";
+			ccvProfit.setText("Est. Profit: " + (hasPrices ? sign + formatTotalGp(estProfit, full) : "—"));
+			ccvProfit.setForeground(!hasPrices || estProfit == 0 ? ColorScheme.LIGHT_GRAY_COLOR
+					: (estProfit > 0 ? COLOR_HIGH : COLOR_LOW));
 		}
 
-		@Override
-		public void mousePressed(MouseEvent e)
+		populateOverviewLabels(overviewLabels, item, false);
+
+		if (priceGraph != null)
+			priceGraph.setData(item.getSeries5m(), item.getSeries1h(), item.getSeries6h(),
+					item.getSeries24h(), item.getAvgPrice());
+
+		if (volumeGraph != null)
+			volumeGraph.setData(item.getSeries5m(), item.getSeries1h(), item.getSeries6h(),
+					item.getSeries24h(), item.getAvgPrice());
+
+		applyBuyLimit(item);
+		long tax = geTax(item.getAvgPrice());
+		miGeTax.setText(hasPrices ? "~" + formatTotalGp(tax, full) : "—");
+		applyTradeTime(miLastBought, item.getLatestHighTime());
+		applyTradeTime(miLastSold, item.getLatestLowTime());
+		applyVolatility(item);
+		applyLiquidity(vol24);
+		if (priceRangeBar != null)
 		{
-			actions.setGroupCollapsed(group.getKey(), !group.isCollapsed());
+			long[] range = thirtyDayRange(item);
+			priceRangeBar.setRange(range[0], range[1], item.getAvgPrice());
+			applyRangePosition(range[0], range[1], item.getAvgPrice());
+		}
+
+		applyBuySellPressure(item);
+
+		long ha = item.getHighAlch();
+		long la = item.getLowAlch();
+		long avg = item.getAvgPrice();
+		haValue.setText(ha > 0 ? formatTotalGp(ha, full) : "—");
+		laValue.setText(la > 0 ? formatTotalGp(la, full) : "—");
+		long haP = ha - avg - natureRunePrice - 5 * fireRunePrice;
+		long laP = la - avg - natureRunePrice - 3 * fireRunePrice;
+		boolean alchKnown = ha > 0 && hasPrices;
+		boolean laKnown = la > 0 && hasPrices;
+		applyProfitLabel(haProfit, haP, alchKnown);
+		applyProfitLabel(laProfit, laP, laKnown);
+		haProfit.setToolTipText(alchKnown ? alchProfitTooltip("High", ha, avg, 5) : null);
+		laProfit.setToolTipText(laKnown ? alchProfitTooltip("Low", la, avg, 3) : null);
+		boolean showAlchProfit = colQty > 0 && alchKnown;
+		alchEstProfitRow.setVisible(showAlchProfit);
+		if (showAlchProfit)
+		{
+			long estProfit = haP * colQty;
+			String sign = estProfit > 0 ? "+" : "";
+			alchEstProfit.setText(sign + formatTotalGp(estProfit, full));
+			alchEstProfit.setForeground(estProfit == 0 ? ColorScheme.LIGHT_GRAY_COLOR
+					: (estProfit > 0 ? COLOR_HIGH : COLOR_LOW));
+			alchEstProfit.setToolTipText("<html>High alch profit (" + signedGp(haP)
+					+ ") × " + NUMBER_FORMAT.format(colQty) + " in collection log"
+					+ "<br>= " + signedGp(estProfit) + "</html>");
+		}
+
+		if (!viewOnly && item.getNotifications().isEmpty())
+		{
+			for (int i = 0; i < DEFAULT_NOTIFICATION_ROWS; i++)
+				item.getNotifications().add(new NotificationRule());
+
+			item.setNotificationsInitialized(true);
+			notifyNotificationsEdited();
+		}
+
+		if (!viewOnly && !notificationsTable.isEditing())
+		{
+			notificationsModel.setItem(item);
+			applyNotificationRenderers();
+			notificationsTable.revalidate();
+		}
+
+		if (!viewOnly && !acquisitionsTable.isEditing())
+		{
+			acquisitionsModel.setItem(item);
+			applyTableRenderers();
+			acquisitionsTable.revalidate();
+		}
+
+		notificationsSection.setVisible(!viewOnly);
+		acquisitionsSection.setVisible(!viewOnly);
+
+		itemValuesSection.setVisible(showMarket);
+		marketInfoSection.setVisible(showMarket);
+		priceOverviewSection.setVisible(showMarket);
+		priceGraphSection.setVisible(showMarket);
+		volumeGraphSection.setVisible(showMarket);
+
+		updateAcqPopoutButton();
+
+		if (acqPopoutModel != null)
+		{
+			acqPopoutModel.setItem(item);
+			applyAcqRenderers(acqPopoutTable, acqPopoutModel, true);
+			acqPopoutTable.revalidate();
+		}
+
+		refreshPopouts(item);
+	}
+
+	/** Resets an overview cell to the {@code "-"} placeholder. */
+	private void setOverviewPlaceholder(JLabel label)
+	{
+		clearItemValue(label, "-");
+	}
+
+	/** Sets a price cell's text (full or abbreviated), color, tooltip, and hover tint, or a placeholder if unset. */
+	private void setPriceCell(JLabel label, long value, Color color, String tooltipLabel, Color tint, boolean full)
+	{
+		label.setForeground(color);
+		if (value <= 0)
+		{
+			setOverviewPlaceholder(label);
+		}
+		else if (full)
+		{
+			removeHoverTint(label);
+			label.setText(NUMBER_FORMAT.format(value));
+			String tooltipPrefix = tooltipLabel == null ? "" : tooltipLabel + ": ";
+			label.setToolTipText(tooltipPrefix + NUMBER_FORMAT.format(value) + " gp");
+		}
+		else
+		{
+			installShortValue(label, value, GpFormat.shortValue1dp(value), tooltipLabel, tint);
 		}
 	}
 
-	/** Re-renders the watchlist on every edit to the filter field. */
-	private final class FilterListener implements DocumentListener
+	/** Detaches any hover-tint listener from a label before its value is replaced. */
+	private static void removeHoverTint(JLabel label)
 	{
-		@Override
-		public void insertUpdate(DocumentEvent e)
+		for (MouseListener ml : label.getMouseListeners())
 		{
-			redraw();
-		}
-
-		@Override
-		public void removeUpdate(DocumentEvent e)
-		{
-			redraw();
-		}
-
-		@Override
-		public void changedUpdate(DocumentEvent e)
-		{
-			redraw();
+			if (ml instanceof HoverTintListener)
+				label.removeMouseListener(ml);
 		}
 	}
 
-	/** Re-runs the search on every edit to the search field. */
-	private final class SearchListener implements DocumentListener
+	/** @return the high/low midpoint of a price point, or whichever side is known when one is missing. */
+	private static long overviewMidpoint(WikiRealtimePriceClient.PricePoint p)
 	{
-		@Override
-		public void insertUpdate(DocumentEvent e)
+		long h = p.getAvgHighPrice();
+		long l = p.getAvgLowPrice();
+		if (h > 0 && l > 0)
+			return (h + l) / 2;
+
+		return Math.max(h, l);
+	}
+
+	/** @return the total traded volume for an item over the given window, or 0 if unknown. */
+	private long windowVolume(TrackedItem item, TimeWindow window)
+	{
+		PriceStats s = item.getWindowStats().get(window);
+		return s == null ? 0 : s.getVolume();
+	}
+
+	/** Sets a volume cell's compact/full text with a full-number tooltip and hover tint, or a placeholder. */
+	private void installVolumeValue(JLabel label, long vol, boolean full)
+	{
+		label.setForeground(COLOR_VOLUME);
+		label.setToolTipText("Volume: " + NUMBER_FORMAT.format(vol));
+		if (full)
 		{
-			onSearch(searchField.getText());
+			removeHoverTint(label);
+			label.setText(NUMBER_FORMAT.format(vol));
+			return;
 		}
 
-		@Override
-		public void removeUpdate(DocumentEvent e)
+		String text = GpFormat.shortValue1dp(vol);
+		label.setText(text);
+		removeHoverTint(label);
+		HoverTintListener listener = new HoverTintListener(label, text, TINT_VOLUME);
+		label.addMouseListener(listener);
+		SwingUtilities.invokeLater(listener::applyIfHovered);
+	}
+
+	/** Sets a label to the signed percent change of the current price vs. the window average, colored up/down. */
+	private void applyDeltaPct(JLabel label, TrackedItem item, TimeWindow window)
+	{
+		for (MouseListener ml : label.getMouseListeners())
 		{
-			onSearch(searchField.getText());
+			if (ml instanceof HoverTintListener)
+				label.removeMouseListener(ml);
 		}
 
-		@Override
-		public void changedUpdate(DocumentEvent e)
+		label.setToolTipText(null);
+
+		long current = item.getAvgPrice();
+		PriceStats stats = item.getWindowStats().get(window);
+		long baseline = stats == null ? 0 : stats.getAvg();
+		if (current <= 0 || baseline <= 0)
 		{
-			onSearch(searchField.getText());
+			label.setText("-");
+			label.setForeground(COLOR_VOLUME);
+			label.setToolTipText(null);
+			return;
+		}
+
+		double pct = Math.round(((double) (current - baseline) / baseline) * 1000.0) / 10.0;
+		String pctText;
+		Color color;
+		Color tint;
+		if (pct == 0.0)
+		{
+			pctText = "0%";
+			color = COLOR_VOLUME;
+			tint = TINT_VOLUME;
+		}
+		else
+		{
+			pctText = String.format(Locale.US, "%+.1f%%", pct);
+			color = pct > 0 ? COLOR_HIGH : COLOR_LOW;
+			tint = pct > 0 ? TINT_HIGH : TINT_LOW;
+		}
+
+		label.setText(pctText);
+		label.setForeground(color);
+		label.setToolTipText(pctText + " change compared to " + spelledInterval(window) + " avg.");
+
+		HoverTintListener listener = new HoverTintListener(label, pctText, tint);
+		label.addMouseListener(listener);
+		SwingUtilities.invokeLater(listener::applyIfHovered);
+	}
+
+	/** @return the window's long label lower-cased for use mid-sentence in tooltips. */
+	private static String spelledInterval(TimeWindow window)
+	{
+		return window.getLongLabel().toLowerCase(Locale.ROOT);
+	}
+
+	/** Sets a profit label to a signed, colored gp figure, or a placeholder when the profit is unknown. */
+	private void applyProfitLabel(JLabel label, long profit, boolean known)
+	{
+		if (!known)
+		{
+			label.setText("—");
+			label.setForeground(Color.WHITE);
+			return;
+		}
+
+		String sign = profit > 0 ? "+" : "";
+		label.setText(sign + formatTotalGp(profit, ValueFormat.FULL));
+		label.setForeground(profit == 0 ? Color.WHITE : (profit > 0 ? COLOR_HIGH : COLOR_LOW));
+	}
+
+	/** @return the value as a comma-grouped gp string with an explicit {@code +} when positive. */
+	private static String signedGp(long v)
+	{
+		return (v > 0 ? "+" : "") + NUMBER_FORMAT.format(v) + " gp";
+	}
+
+	/** Builds the tooltip breaking down an alch-profit figure: alch value minus item cost and rune cost. */
+	private String alchProfitTooltip(String label, long alchValue, long itemAvg, int fireQty)
+	{
+		long natureCost = natureRunePrice;
+		long fireCost = (long) fireQty * fireRunePrice;
+		long profit = alchValue - itemAvg - natureCost - fireCost;
+		return "<html>" + label + " alch profit:<br>"
+				+ NUMBER_FORMAT.format(alchValue) + " (alch value)<br>"
+				+ "− " + NUMBER_FORMAT.format(itemAvg) + " (item avg price)<br>"
+				+ "− " + NUMBER_FORMAT.format(natureRunePrice) + " (nature rune)<br>"
+				+ "− " + fireQty + " × " + NUMBER_FORMAT.format(fireRunePrice) + " (fire rune)<br>"
+				+ "= " + signedGp(profit) + "</html>";
+	}
+
+	/** @return the Grand Exchange sell tax on a unit at {@code avgPrice} (per the live GE tax rules). */
+	private long geTax(long avgPrice)
+	{
+		if (avgPrice < 50)
+			return 0;
+
+		long tax = (long) Math.floor(avgPrice * 0.02);
+		return Math.min(tax, 5_000_000L);
+	}
+
+	/** Sets the market-info volatility rating from the item's week series via {@link MarketClassifier}. */
+	private void applyVolatility(TrackedItem item)
+	{
+		String label = MarketClassifier.volatility(item.getSeriesFor(TimeWindow.WEEK));
+		if (label == null)
+		{
+			miVolatility.setText("—");
+			miVolatility.setForeground(Color.WHITE);
+			miVolatility.setToolTipText(null);
+			return;
+		}
+
+		Color color;
+		String tooltip;
+		switch (label)
+		{
+			case "Low":
+				color = COLOR_HIGH; tooltip = "Stable Price";
+				break;
+			case "Medium":
+				color = COLOR_AVG; tooltip = "Occasional/Moderate Price Swings";
+				break;
+			default:
+				color = COLOR_LOW; tooltip = "Large/Frequent Price Swings";
+				break;
+		}
+
+		miVolatility.setText(label);
+		miVolatility.setForeground(color);
+		miVolatility.setToolTipText(tooltip);
+	}
+
+	/** Sets the market-info liquidity rating from the last 24h volume via {@link MarketClassifier}. */
+	private void applyLiquidity(long vol24)
+	{
+		String label = MarketClassifier.liquidity(vol24);
+		if (label == null)
+		{
+			miLiquidity.setText("—");
+			miLiquidity.setForeground(Color.WHITE);
+			miLiquidity.setToolTipText(null);
+			return;
+		}
+
+		Color color = "Low".equals(label) ? COLOR_LOW : "Medium".equals(label) ? COLOR_AVG : COLOR_HIGH;
+		miLiquidity.setText(label);
+		miLiquidity.setForeground(color);
+		miLiquidity.setToolTipText("24h volume: " + NUMBER_FORMAT.format(vol24));
+	}
+
+	/** Sets the market-info "30-day range position" rating for where the live price sits within its month range. */
+	private void applyRangePosition(long min, long max, long live)
+	{
+		String text = MarketClassifier.rangePosition(min, max, live);
+		if (text == null)
+		{
+			rangePositionLabel.setText("-");
+			rangePositionLabel.setForeground(COLOR_VOLUME);
+			return;
+		}
+
+		Color color;
+		switch (text)
+		{
+			case "Highest":
+			case "High":
+				color = COLOR_HIGH;
+				break;
+			case "Low":
+			case "Lowest":
+				color = COLOR_LOW;
+				break;
+			default:
+				color = COLOR_AVG;
+				break;
+		}
+
+		rangePositionLabel.setText(text);
+		rangePositionLabel.setForeground(color);
+	}
+
+	/** Buy% within [LOW, HIGH] reads as a Balanced Market; outside it, Buyers/Sellers. */
+	private static final int PRESSURE_BALANCED_LOW = 45;
+	private static final int PRESSURE_BALANCED_HIGH = 55;
+
+	/** Computes the buy/sell volume split over the configured window and updates the pressure bar + labels. */
+	private void applyBuySellPressure(TrackedItem item)
+	{
+		if (buySellBar == null)
+			return;
+
+		PressureWindow win = config.buySellPressureWindow();
+		long[] split = MarketClassifier.buySellVolume(item.getSeriesFor(win.window()), win.duration());
+		long buy = split[0];
+		long sell = split[1];
+		long total = buy + sell;
+
+		if (total <= 0)
+		{
+			buySellBar.setRatio(-1);
+			pressureMarketLabel.setText("No data");
+			pressureMarketLabel.setForeground(PricewatchColors.MUTED);
+			buyPressureLabel.setText("");
+			buyPressureLabel.setVolume(-1);
+			sellPressureLabel.setText("");
+			sellPressureLabel.setVolume(-1);
+			return;
+		}
+
+		double buyFraction = (double) buy / total;
+		int buyPct = (int) Math.round(buyFraction * 100);
+		int sellPct = 100 - buyPct;
+		buySellBar.setRatio(buyFraction);
+
+		if (buyPct >= PRESSURE_BALANCED_LOW && buyPct <= PRESSURE_BALANCED_HIGH)
+		{
+			pressureMarketLabel.setText("Balanced Market");
+			pressureMarketLabel.setForeground(COLOR_AVG);
+		}
+		else if (buyPct > PRESSURE_BALANCED_HIGH)
+		{
+			pressureMarketLabel.setText("Sellers Market");
+			pressureMarketLabel.setForeground(COLOR_LOW);
+		}
+		else
+		{
+			pressureMarketLabel.setText("Buyers Market");
+			pressureMarketLabel.setForeground(COLOR_HIGH);
+		}
+
+		buyPressureLabel.setText(buyPct + "% Buy (" + GpFormat.shortValue(buy) + ")");
+		buyPressureLabel.setVolume(buy);
+		sellPressureLabel.setText(sellPct + "% Sell (" + GpFormat.shortValue(sell) + ")");
+		sellPressureLabel.setVolume(sell);
+	}
+
+	/** @return the {@code [min, max]} price range over the item's last 30 days via {@link MarketClassifier}. */
+	private long[] thirtyDayRange(TrackedItem item)
+	{
+		return MarketClassifier.thirtyDayRange(item.getSeriesFor(TimeWindow.MONTH));
+	}
+
+	/** Applies the acquisitions renderers to the sidebar (compact) table. */
+	private void applyTableRenderers()
+	{
+		applyAcqRenderers(acquisitionsTable, acquisitionsModel, false);
+	}
+
+	/**
+	 * Wires an acquisitions table's fonts, row height, per-column renderers/editors, and
+	 * headers for either the compact sidebar table or the expanded pop-out table.
+	 */
+	private void applyAcqRenderers(JTable table, AcquisitionsTableModel model, boolean expanded)
+	{
+		Font f = expanded ? new Font(Font.MONOSPACED, Font.PLAIN, 18) : FontManager.getRunescapeSmallFont();
+		table.setFont(f);
+		table.setRowHeight(expanded ? 30 : 22);
+		table.getTableHeader().setFont(f);
+
+		JTextField centerEditorField = new JTextField();
+		centerEditorField.setHorizontalAlignment(SwingConstants.CENTER);
+		centerEditorField.setFont(f);
+		DefaultCellEditor centerEditor = new DefaultCellEditor(centerEditorField);
+
+		int cols = table.getColumnCount();
+		for (int i = 0; i < cols; i++)
+		{
+			TableColumn col = table.getColumnModel().getColumn(i);
+			String name = model.getColumnName(i);
+			if (model.isSymbolColumn(i))
+			{
+				col.setCellRenderer(new SourceGlyphRenderer(() -> acqHoverRow, () -> acqHoverCol));
+				col.setMinWidth(28);
+				col.setMaxWidth(28);
+				col.setPreferredWidth(28);
+				col.setHeaderValue("");
+				continue;
+			}
+
+			boolean isProfit = "Profit".equals(name);
+			boolean isSold = "Sold".equals(name);
+			col.setCellRenderer(new AcqCellRenderer(isProfit, expanded, () -> acqHoverRow, () -> acqHoverCol,
+					isSold ? model::isSellEstimated : null));
+			if (i < 3)
+				col.setCellEditor(centerEditor);
+
+			col.setHeaderValue(expanded ? expandedAcqHeader(name) : name);
+		}
+
+		TableCellRenderer hr = table.getTableHeader().getDefaultRenderer();
+		if (hr instanceof DefaultTableCellRenderer)
+			((DefaultTableCellRenderer) hr).setHorizontalAlignment(SwingConstants.CENTER);
+
+		table.getTableHeader().repaint();
+	}
+
+	/** @return the roomy pop-out header for a compact acquisitions column name. */
+	private static String expandedAcqHeader(String compact)
+	{
+		switch (compact)
+		{
+			case "Qty": return "Quantity";
+			case "Bought": return "Bought Price";
+			case "Sold": return "Sold Price";
+			default: return compact;
+		}
+	}
+
+	/** @return the tooltip caption for an acquisitions-table column. */
+	private static String acqTooltipLabel(int col)
+	{
+		switch (col)
+		{
+			case 0: return "Quantity";
+			case 1: return "Bought At";
+			case 2: return "Sold At";
+			case 3: return "Profit";
+			default: return "";
 		}
 	}
 }

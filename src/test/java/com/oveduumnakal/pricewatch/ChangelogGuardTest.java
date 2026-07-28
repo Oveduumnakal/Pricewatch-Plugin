@@ -19,21 +19,19 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 /**
- * The build guard for the bundled changelog: run as part of {@code ./gradlew build}
- * alongside the style check, it fails the build — locally and in CI — when the bundled
- * changelog has no entry for the current {@code runelite-plugin.properties} version, or
- * when the changelog is malformed. Since bumping that version is the first step of every
+ * The build guard for #79: run as part of {@code ./gradlew build} (alongside the
+ * style check), it fails the build — locally and in CI — when the bundled changelog
+ * has no entry for the current {@code runelite-plugin.properties} version, or when
+ * the changelog is malformed. Since bumping that version is the first step of every
  * release, the next build forces the new release's changelog entry to exist.
  */
 public class ChangelogGuardTest
 {
 	private static final Pattern DATE = Pattern.compile("[A-Z][a-z]+ \\d{1,2} \\d{4}");
 
-	/** @return the version declared in {@code runelite-plugin.properties}. */
 	private String pluginVersion() throws IOException
 	{
 		Properties props = new Properties();
-
 		try (FileInputStream in = new FileInputStream("runelite-plugin.properties"))
 		{
 			props.load(in);
@@ -46,11 +44,9 @@ public class ChangelogGuardTest
 	public void currentVersionHasATopChangelogEntry() throws IOException
 	{
 		String version = pluginVersion();
-
 		assertNotNull("runelite-plugin.properties is missing a version", version);
 
 		Changelog log = Changelog.load();
-
 		assertFalse("changelog.md has no releases", log.releases().isEmpty());
 		assertTrue("changelog.md has no entry for version " + version, log.hasVersion(version));
 		assertEquals("the newest changelog entry must be the current version " + version,
@@ -70,6 +66,7 @@ public class ChangelogGuardTest
 			assertNotNull("release " + release.getVersion() + " is missing its date", release.getDate());
 			assertTrue("release " + release.getVersion() + " has a malformed date: " + release.getDate(),
 					DATE.matcher(release.getDate()).matches());
+
 			assertFalse("release " + release.getVersion() + " has an empty body", release.getBody().isEmpty());
 		}
 	}

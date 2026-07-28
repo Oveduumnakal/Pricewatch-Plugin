@@ -10,7 +10,7 @@ import java.util.OptionalDouble;
 import lombok.Data;
 
 /**
- * One user-defined alert condition on a watched item: when {@code metric} over
+ * One user-defined alert condition on a tracked item: when {@code metric} over
  * {@code timeWindow}, compared with {@code operation} against {@code value},
  * holds true.
  *

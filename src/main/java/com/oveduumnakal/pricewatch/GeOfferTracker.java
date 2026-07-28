@@ -13,24 +13,20 @@ import java.util.Map;
 /**
  * Turns the raw, cumulative {@code GrandExchangeOfferChanged} stream into discrete
  * per-slot increments — a placement, an incremental fill, or a cancellation — so the
- * plugin can act on GE activity. Pure and client-free (callers pass the offer's
- * primitive fields), so it is unit-testable without a client.
+ * plugin can price GE activity. Pure and client-free (callers pass the offer's
+ * primitive fields), so it is unit-testable like {@link SourceAttributionCore}.
  *
  * <p>Each slot's {@code quantitySold}/{@code spent} are cumulative, so a fill's real
  * increment is the difference from the last event for that slot. The first event seen
  * per slot after a (re)login seeds a baseline and emits nothing, so an offer's existing
  * progress isn't replayed as fresh fills.
- *
- * <p>Pricewatch consumes only {@code BUY} fills, to count purchases against the 4-hour
- * buy limit. The sell side is still derived — the tracker is copied unchanged — but
- * nothing acts on it, since what you sold is a fact about what you held.
  */
 class GeOfferTracker
 {
 	/** Which side an offer is: a buy adds items on collection, a sell removes them on placement. */
 	enum Kind { BUY, SELL }
 
-	/** What a single offer event means to the consumer. */
+	/** What a single offer event means for pricing. */
 	enum Type { PLACED, FILL, CANCELLED }
 
 	/** One discrete change derived from an offer event. */

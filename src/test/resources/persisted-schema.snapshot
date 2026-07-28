@@ -1,3 +1,11 @@
+class AcquisitionRecord {
+  boughtAt: long
+  quantity: int
+  sellSource: AcquisitionSource
+  soldAt: Long
+  source: AcquisitionSource
+}
+enum AcquisitionSource { UNKNOWN, MANUAL, GE_TRADE, GROUND, GATHER, REWARD, THIEVING, PLAYER_TRADE, SHOP, ALCHEMY, PROCESSING, DECANT, CONSUMED, BURNED, CRUSHED, DEATH }
 class CachedPrice {
   avg: long
   high: long
@@ -14,7 +22,7 @@ class CategoryState {
   collapsed: boolean
   name: String
 }
-enum NotificationMetric { HIGH, LOW, AVERAGE, HA_PROFIT, VOLUME, DELTA_PCT, VOLATILITY, LIQUIDITY, RANGE_30D }
+enum NotificationMetric { HIGH, LOW, AVERAGE, ITM_PROFIT, HA_PROFIT, VOLUME, DELTA_PCT, QUANTITY, VOLATILITY, LIQUIDITY, RANGE_30D }
 enum NotificationOperation { GT, GTE, LT, LTE, EQ }
 class NotificationRule {
   metric: NotificationMetric
@@ -24,10 +32,17 @@ class NotificationRule {
   value: String
 }
 class PersistedItem {
+  acquisitions: List<AcquisitionRecord>
   category: String
+  costBasisInitialized: boolean
+  deathSuspendedAt: Long
+  deathSuspendedQuantity: int
   favorite: boolean
   itemId: int
   notifications: List<NotificationRule>
+  notificationsInitialized: boolean
   onOverlay: boolean
+  pouchSuspendedQuantity: int
+  quantity: int
 }
 enum TimeWindow { NONE, LIVE, M5, H1, H3, H6, H12, H24, WEEK, MONTH, MONTH3, MONTH6, YEAR }

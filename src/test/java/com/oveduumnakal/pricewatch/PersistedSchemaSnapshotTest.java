@@ -51,8 +51,8 @@ public class PersistedSchemaSnapshotTest
 	/** The types actually serialized to config; everything else is reached from these. */
 	private static final Class<?>[] ROOTS = {
 			PricewatchPlugin.PersistedItem.class,
-			PricewatchPlugin.CachedPrice.class,
 			PricewatchPlugin.CategoryData.class,
+			PricewatchPlugin.CachedPrice.class,
 	};
 
 	@Test
