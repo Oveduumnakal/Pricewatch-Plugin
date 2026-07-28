@@ -86,10 +86,10 @@ public class NotificationRuleTest
 	}
 
 	@Test
-	public void ruleJsonWithoutARepeatFlagLoadsAsAOnceRule()
+	public void legacyJsonWithoutRepeatLoadsAsOnceRule()
 	{
-		String stored = "{\"metric\":\"HIGH\",\"timeWindow\":\"LIVE\",\"operation\":\"GTE\",\"value\":\"5m\"}";
-		NotificationRule rule = new Gson().fromJson(stored, NotificationRule.class);
+		String legacy = "{\"metric\":\"HIGH\",\"timeWindow\":\"LIVE\",\"operation\":\"GTE\",\"value\":\"5m\"}";
+		NotificationRule rule = new Gson().fromJson(legacy, NotificationRule.class);
 		assertFalse(rule.isRepeat());
 		assertEquals(NotificationMetric.HIGH, rule.getMetric());
 	}

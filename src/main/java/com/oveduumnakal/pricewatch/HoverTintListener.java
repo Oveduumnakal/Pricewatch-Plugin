@@ -13,8 +13,8 @@ import java.awt.event.MouseEvent;
 import javax.swing.JLabel;
 
 /**
- * Mouse listener that swaps a value label to a tinted background while hovered,
- * restoring the untinted text on exit.
+ * Mouse listener that swaps a value label to a tinted background (and the full
+ * comma-grouped number) while hovered, restoring the compact text on exit.
  */
 final class HoverTintListener extends MouseAdapter
 {
@@ -52,13 +52,7 @@ final class HoverTintListener extends MouseAdapter
 		label.setText(shortText);
 	}
 
-	/**
-	 * Applies the highlighted text immediately if the pointer is already over the label.
-	 *
-	 * <p>Rows are rebuilt wholesale on every price refresh, so a label the pointer is
-	 * resting on is replaced by a fresh untinted one that will never receive its own
-	 * {@code mouseEntered}. Without this the tint silently drops off mid-hover.
-	 */
+	/** Applies the highlighted text immediately if the pointer is already over the label. */
 	void applyIfHovered()
 	{
 		if (tint == null || !label.isShowing() || label.getWidth() == 0)

@@ -1,10 +1,9 @@
 <p align="center">
-  <img src="banner.png" alt="Pricewatch">
+  <img src="banner.png" alt="Pricewatch banner">
 </p>
+<h1 align="center">Pricewatch</h1>
 
-Pricewatch is a RuneLite plugin that keeps an eye on the Grand Exchange for you. Pick the items you care about and the plugin shows you what the market is doing to them: live prices straight from the wiki, price and volume charts, how much an item's price jumps around and how quickly it trades, whether buyers or sellers are winning right now, what's left of your buy limit, and what it alchs for. Set an alert and it will tell you when something crosses your number.
-
-Pricewatch only ever reports on the market. It never records how many of an item you own or what you paid for it.
+Pricewatch is a RuneLite plugin that keeps an eye on the items you care about. Pick the items you want to follow and the plugin counts how many you have, looks up what they are worth right now on the Grand Exchange, and works out how much profit you have actually made. It watches how items really come and go — trading on the Grand Exchange, buying from shops, trading with players, cooking, crafting, and more — so the numbers reflect what actually happened. Charts, market details, on-screen overlays, and price alerts round it out.
 
 ## Features
 
@@ -12,120 +11,117 @@ Pricewatch only ever reports on the market. It never records how many of an item
 
 - **Prices the moment you look**
 
-  Every watched item shows its current price, refreshed automatically from the wiki's real-time data. The plugin remembers the last prices it saw, so you get real numbers the moment you log in instead of blank dashes.
+  Every tracked item shows its current Grand Exchange and wiki prices, refreshed automatically. The plugin also remembers the last prices it saw, so you see real numbers the moment you log in instead of blank dashes.
 
 - **Check any item, no strings attached**
 
-  Search for an item and its full detail view opens straight away. It stays a preview until you actually add it, so a quick price check doesn't clutter your list.
+  View-only mode lets you look up any item's prices and charts without adding it to your list.
 
-  <img src="docs/img/01-watchlist.png" alt="The Pricewatch panel showing a watchlist with live prices" width="270"> <img src="docs/img/02-preview.png" alt="Searching an item and seeing its detail view without adding it to the watchlist" width="270">
+  <img src="docs/img/01-tracked-list.gif" alt="The Pricewatch panel showing a tracked list with live prices, values, and daily changes" width="270"> <img src="docs/img/02-view-only.gif" alt="Looking up an item's prices and charts in view-only mode without tracking it" width="270">
 
-- **Show the figure you actually want**
+### Track your items and your profit
 
-  Choose what the line under each item's name shows — current high, low, average or traded volume, over whichever time window you like — and whether prices are tinted green or red as they move.
+- **A live list of everything you track**
 
-  <img src="docs/img/03-price-line.png" alt="The same watchlist rows configured to show different price figures">
+  Add an item from the search bar or by right-clicking it in the game, and Pricewatch starts counting it. Your quantities stay up to date on their own, whether the items sit in your inventory, your bank, or your rune pouch. Each item shows how many you have and what the stack is worth right now.
+
+- **Profit based on what really happened**
+
+  The plugin remembers what you paid for your items and compares it with what they are worth now. It watches how items actually arrive and leave — Grand Exchange trades at the real price your offer went through at, shop buying and selling, trades with other players, picking things up off the ground, gathering from skilling, thieving, boss and minigame rewards, and High/Low Alchemy — and prices each one the right way. Even cooking, crafting, smithing, fletching, herblore, and runecrafting carry an item's cost onto whatever you make from it, and dying doesn't wipe your history.
+
+  <img src="docs/img/04-profit-area.png" alt="An item's detail view showing current values, average cost, and estimated profit">
+
+- **See where every item came from**
+
+  Each item has its own collection log showing every batch you gained or lost, where it came from — Grand Exchange, shop, trade, ground, and so on — and what it cost. If something looks off, you can edit the entries yourself to correct or fill in your history.
+
+  <img src="docs/img/05-collection-log.gif" alt="An item's collection log listing batches from the Grand Exchange, shops, trades, and the ground">
+
+- **Session stats**
+
+  A "Session" line shows how much you have gained or lost since you logged in, split into prices moving on their own versus things you bought and sold.
+
+  <img src="docs/img/06-session-line.png" alt="The totals area with estimated sell value, estimated profit, and the session gain">
 
 ### Charts
 
 - **Price and volume graphs**
 
-  Every item has graphs of its price and how much of it is being traded, from a day back to a full year. Hover to read exact values, or pop a graph out into its own resizable window for a bigger look.
+  Every item has graphs of its price and how much of it is being traded, from one day back to a full year. Hover to read exact values, or pop a graph out into its own window for a bigger look.
 
-  <img src="docs/img/04-charts.png" alt="Price and volume graphs in an item's detail view" width="30%"> <img src="docs/img/05-chart-popout.png" alt="A price chart popped out into its own resizable window next to the client" width="68%">
+  <img src="docs/img/07-price-volume-charts.png" alt="Price and volume graphs in an item's detail view" width="30%"> <img src="docs/img/08-chart-popout.gif" alt="A price chart popped out into its own resizable window next to the client" width="68%">
+
+- **Watch your collection grow**
+
+  A chart of your whole collection's value over time, with a line for how you've done since login. If you remove an item, the chart's history corrects itself too.
+
+  <img src="docs/img/09-portfolio-history.gif" alt="The portfolio value history chart showing the collection's worth over several weeks" width="700">
 
 ### Detailed market information
 
 - **Know the market before you trade**
 
-  Current high, low and average, how the price has moved today, where it sits in its 30-day range, how much is changing hands, and when the item last actually bought and sold. Prices that have gone stale are dimmed so you don't get fooled by them.
+  See an item's Grand Exchange buy limit (and how much of it you have left), the GE tax, and when it was last bought and sold. Old, out-of-date prices are dimmed so you don't get fooled by them.
 
-  <img src="docs/img/06-market-info.png" alt="The market info section with the 30-day range, volume, and last bought and sold times">
+  <img src="docs/img/10-market-info.png" alt="The market info section with buy limit, GE tax, last bought and sold times, ratings, the 30-day range, and the buy/sell pressure bar">
 
 - **How easy is it to buy or sell?**
 
-  Simple ratings for how much an item's price jumps around and how quickly it trades, plus a pressure bar showing whether people are mostly buying or mostly selling right now.
-
-  <img src="docs/img/07-ratings-pressure.png" alt="Volatility and liquidity ratings above a buy/sell pressure bar">
+  Simple ratings show how much an item's price jumps around and how quickly it trades, plus a pressure bar that shows whether people are mostly buying or mostly selling right now. A 30-day bar shows whether today's price is near its recent high or low.
 
 - **Alchemy values**
 
   High and Low Alchemy values for every item, including whether alching it would make or lose money once the rune cost is counted.
 
-  <img src="docs/img/08-alchemy.png" alt="High and Low Alchemy values with the rune-cost-adjusted profit">
-
-- **The whole picture at once**
-
-  An overview grid puts every price window side by side, for when one figure isn't what you're after.
-
-  <img src="docs/img/09-overview-grid.png" alt="The overview grid showing every price window at once">
-
-- **Arrange it your way**
-
-  Every section of the detail view can be switched off or moved, so the thing you look at first is the thing at the top.
+  <img src="docs/img/12-alchemy-values.png" alt="High and Low Alchemy values with the rune-cost-adjusted profit">
 
 ### Organize your list
 
 - **Make the list your own**
 
-  Star the items you check most, group the rest into your own collapsible categories, or let the plugin sort everything into sensible groups with one click. Sort by name, price or how much the price moved today, or simply drag items into any order you like.
+  Pin your favourites to the top, group items into your own collapsible categories, or let the plugin sort everything into sensible groups with one click. You can also sort by name, value, profit, or how much the price moved today, or simply drag items into any order you like.
 
-  <img src="docs/img/10-categories-favourites.png" alt="The watchlist grouped into collapsible categories with a Favourites group on top" width="30%"> <img src="docs/img/11-auto-categorise.png" alt="One click on auto-categorise reorganizing the list into sensible groups" width="68%">
+  <img src="docs/img/13-categories-favourites.png" alt="The tracked list grouped into collapsible categories with favourites pinned on top" width="30%"> <img src="docs/img/14-auto-categorize.gif" alt="One click on auto-categorize reorganizing the list into sensible groups" width="68%">
 
 - **Handle long lists**
 
   A compact layout fits more items on screen, and a filter box narrows a long list down to what you're looking for in a couple of keystrokes.
 
-  <img src="docs/img/12-compact-filter.png" alt="The same list in compact and standard layouts, then narrowed with the filter box">
+  <img src="docs/img/15-compact-vs-standard.gif" alt="The same list in compact and standard layouts"> <img src="docs/img/16-filter-box.gif" alt="Typing in the filter box narrowing the list">
 
 - **Share and back up**
 
-  Copy your watchlist and its categories to a short code to share with a friend or keep as a backup, and paste one in to merge it with yours.
+  Export your history to a spreadsheet, or share your tracked list with a friend (or back it up) using a short code.
 
-  <img src="docs/img/13-share.png" alt="The share dialog with the watchlist's share code">
+  <img src="docs/img/17-share-export.gif" alt="The share and export dialog with the list's share code">
 
-### Grand Exchange
+### On-screen overlays and game integration
 
-- **How much of your buy limit is left**
+- **Watch items without opening the panel**
 
-  Pricewatch watches your own Grand Exchange buys and shows how much of an item's 4-hour limit you have used, with a countdown to when it resets.
+  Show your chosen items in small boxes right on the game screen, so you can keep an eye on prices and profit while you play.
 
-  <img src="docs/img/14-buy-limit.png" alt="The market info section showing bought against the buy limit with a reset countdown">
+  <img src="docs/img/18-overlay-boxes.png" alt="Overlay boxes on the game screen showing tracked items' prices and profit">
 
-- **Jump in from an offer**
+- **Spot your items in the world**
 
-  Opening a Grand Exchange offer opens that item in Pricewatch, and puts a button on the offer screen that does the same on click. Either half can be switched off under *GE Integration*.
+  Tracked items are highlighted on the ground and in your inventory so they stand out.
 
-  <img src="docs/img/15-ge-integration.png" alt="Clicking the Pricewatch button on a Grand Exchange offer, opening the item in the panel" width="700">
+  <img src="docs/img/19-item-highlights.gif" alt="A tracked item highlighted on the ground and in the inventory">
+
+- **Jump in from the Grand Exchange**
+
+  Opening a Grand Exchange offer can open that item in Pricewatch automatically, or add a "View in Pricewatch" button to the offer screen.
+
+  <img src="docs/img/20-ge-integration.gif" alt="Clicking the View in Pricewatch button on a Grand Exchange offer, opening the item in the panel" width="700">
 
 ### Price alerts
 
 - **Get told when it matters**
 
-  Set alerts per item — for example "tell me when the price goes above 1,000" — on the high, low or average price, or on how much it has moved in a day, over whichever timeframe you choose. Alerts arrive through RuneLite's normal notifications, and they can re-arm so you're told again the next time it happens.
+  Set alerts per item — for example "tell me when the price goes above 1,000" — on price, percent change, trade volume, or market ratings. Alerts arrive through RuneLite's normal notifications, and they can re-arm so you're told again the next time it happens.
 
-  <img src="docs/img/16-alert-editor.png" alt="The alert rule editor with a price threshold rule being set up" width="30%"> <img src="docs/img/17-alert-firing.png" alt="A RuneLite notification for a triggered price alert" width="68%">
-
-### On-screen overlay
-
-- **Prices without opening the panel**
-
-  Put your closest-watched items into small draggable boxes right on the game screen, in a standard or compact layout, so you can keep an eye on them while you play.
-
-  <img src="docs/img/18-overlay-boxes.png" alt="Overlay boxes on the game screen showing watched items' prices">
-
-## Pricewatch or Stockpile — not both
-
-Pricewatch started life as the market half of the [Stockpile plugin](https://github.com/Oveduumnakal/Stockpile-Plugin). Stockpile still has all of it — the same watchlist, prices, charts, market information and alerts — and adds tracking on top: how many of an item you own, what you paid for it, and what you have made. Running both would be the same panel twice.
-
-So the two are **mutually exclusive**, and RuneLite enforces it: switching one on switches the other off. Each keeps its own settings and its own list, and neither touches the other's, so going back later picks up where you left off.
-
-**Which one do you want?**
-
-- **Pricewatch** — you want to know what the market is doing, and nothing about your own holdings. The smaller, simpler panel. It will never count what you own or work out your profit.
-- **[Stockpile](https://github.com/Oveduumnakal/Stockpile-Plugin)** — you want all of that *and* quantities, cost basis and profit.
-
-If you are not sure, start here. Switching costs nothing.
+  <img src="docs/img/21-alert-editor.png" alt="The alert rule editor with a price threshold rule being set up" width="30%"> <img src="docs/img/22-alert-firing.gif" alt="A RuneLite notification for a triggered price alert" width="68%">
 
 ## Links
 

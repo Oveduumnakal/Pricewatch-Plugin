@@ -11,10 +11,10 @@ import javax.swing.JFrame;
 final class PopoutHandle
 {
 	final JFrame frame;
-	final Consumer<WatchedItem> refresher;
+	final Consumer<TrackedItem> refresher;
 	final Runnable onClose;
 
-	PopoutHandle(JFrame frame, Consumer<WatchedItem> refresher, Runnable onClose)
+	PopoutHandle(JFrame frame, Consumer<TrackedItem> refresher, Runnable onClose)
 	{
 		this.frame = frame;
 		this.refresher = refresher;

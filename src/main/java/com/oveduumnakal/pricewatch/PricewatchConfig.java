@@ -1,6 +1,26 @@
 /*
  * Copyright (c) 2026, Oveduumnakal
  * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ *    list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ *    this list of conditions and the following disclaimer in the documentation
+ *    and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
+ * ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+ * ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+ * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 package com.oveduumnakal.pricewatch;
 
@@ -14,67 +34,89 @@ import net.runelite.client.config.Notification;
 import net.runelite.client.config.Range;
 
 /**
- * Settings for the plugin. The group name is deliberately distinct from the
- * Stockpile plugin's, so that sharing a RuneScape profile with it never makes the
- * two overwrite each other's keys. That still matters even though the plugins now
- * conflict and cannot run at once: both leave their settings behind when disabled,
- * and a user who switches back and forth would otherwise find them corrupted.
+ * RuneLite configuration for the Pricewatch plugin.
  *
- * <p>Sections arrive with the features they configure, so this grows over the
- * phases rather than landing whole.
+ * <p>Defines every user-facing setting as a defaulted {@code @ConfigItem}
+ * accessor, grouped into five {@code @ConfigSection}s: main view, tracked-item
+ * row display, GE estimates, tracking/highlighting, and the detail view. The
+ * {@code KEY_*} constants are the persisted setting keys (also used directly by
+ * the plugin when reading/writing config), and {@link #GROUP} names the config
+ * group. Each accessor's behavior is described by its annotation; the per-item
+ * {@code name}/{@code description} are the source of truth shown in the UI.
  */
 @ConfigGroup(PricewatchConfig.GROUP)
 public interface PricewatchConfig extends Config
 {
 	String GROUP = "pricewatch";
 
-	String KEY_WATCHED_ITEMS = "watchedItems";
+	String KEY_TRACKED_ITEMS = "trackedItemIds";
 	String KEY_PRICE_CACHE = "priceCache";
-	String KEY_CATEGORIES = "categories";
+	String KEY_SOURCE_PRICING = "sourcePricing";
+	String KEY_GE_BUY_LEDGER = "geBuyLedger";
 	String KEY_GE_BUY_LIMITS = "geBuyLimits";
-	String KEY_SORT_MODE = "sortMode";
-	String KEY_SORT_REVERSED = "sortReversed";
-	String KEY_COMPACT_VIEW = "compactView";
+	String KEY_CATEGORIES = "trackedCategories";
 
 	String KEY_PRICE_REFRESH_SECONDS = "priceRefreshSeconds";
+	String KEY_PRICE_CHANGE_INDICATOR = "priceChangeIndicator";
 
-	String KEY_PRICE_LINE = "priceLine";
 	String KEY_SHOW_COL_HIGH = "showColHigh";
 	String KEY_SHOW_COL_LOW = "showColLow";
 	String KEY_SHOW_COL_AVG = "showColAvg";
 	String KEY_SHOW_COL_VOLUME = "showColVolume";
-	String KEY_PRICE_CHANGE_INDICATOR = "priceChangeIndicator";
-
-	String KEY_OVERVIEW_PRESET = "overviewPreset";
-	String KEY_PRESSURE_WINDOW = "pressureWindow";
+	String KEY_SHOW_QUANTITY_VALUE = "showQuantityValue";
+	String KEY_ROW_1_DATA = "row1Data";
+	String KEY_ROW_2_DATA = "row2Data";
+	String KEY_ROW_3_DATA = "row3Data";
+	String KEY_SHOW_ITEM_PROFIT_ROW = "showItemProfitRow";
 	String KEY_STALE_PRICE_THRESHOLD = "stalePriceThresholdMinutes";
+	String KEY_COMPACT_VIEW = "compactView";
+	String KEY_SORT_MODE = "sortMode";
+	String KEY_SORT_REVERSED = "sortReversed";
+	String KEY_PORTFOLIO_HISTORY = "portfolioHistory";
+
+	String KEY_LAST_SEEN_VERSION = "lastSeenVersion";
+	String KEY_VERSION_FIRST_SEEN = "versionFirstSeen";
+	String KEY_WHATS_NEW_DISMISSED = "whatsNewDismissed";
+	String KEY_SHOW_SCREEN_OVERLAY = "showScreenOverlay";
+	String KEY_SCREEN_OVERLAY_LAYOUT = "screenOverlayLayout";
+	String KEY_SCREEN_OVERLAY_ON_TOP = "screenOverlayOnTop";
 
 	String KEY_SHOW_ITEM_VALUES = "showItemValues";
+	String KEY_SHOW_COLLECTION_VALUES = "showCollectionValues";
 	String KEY_SHOW_MARKET_INFO = "showMarketInfo";
 	String KEY_SHOW_PRICE_OVERVIEW = "showPriceOverview";
 	String KEY_SHOW_PRICE_GRAPH = "showPriceGraph";
 	String KEY_SHOW_VOLUME_GRAPH = "showVolumeGraph";
 	String KEY_SHOW_ALCH_INFO = "showAlchInfo";
+	String KEY_SHOW_NOTIFICATIONS = "showNotifications";
+	String KEY_SHOW_ITEM_LOG = "showItemLog";
 	String KEY_SHOW_LINKS = "showLinks";
-	String KEY_SHOW_ALERTS = "showAlerts";
+	String KEY_PRESSURE_WINDOW = "buySellPressureWindow";
+	String KEY_PRICE_OVERVIEW_ROWS = "priceOverviewPreset";
+	String KEY_AUTO_ADD_ITEMS = "autoAddItems";
+	String KEY_FALLBACK_PRICING = "fallbackPricing";
+	String KEY_NOTIFICATION_STYLE = "notificationStyle";
 
-	String KEY_ALERT_STYLE = "alertStyle";
+	String KEY_SHOW_GE_ESTIMATES = "showGeEstimates";
+	String KEY_GE_ESTIMATES_POSITION = "geEstimatesPosition";
+	String KEY_GE_ESTIMATES_FORMAT = "geEstimatesFormat";
+	String KEY_GE_ESTIMATES_SPACING = "geEstimatesSpacing";
+	String KEY_SHOW_EST_HIGH = "showEstHigh";
+	String KEY_SHOW_EST_LOW = "showEstLow";
+	String KEY_SHOW_EST_AVG = "showEstAvg";
+	String KEY_SHOW_EST_PROFIT = "showEstProfit";
+	String KEY_SHOW_SESSION = "showSession";
 
+	String KEY_ADD_CONTEXT_MENU_OPTION = "addContextMenuOption";
+	String KEY_TRACK_ITEM_COLOR = "trackItemColor";
+	String KEY_STOP_TRACKING_COLOR = "stopTrackingColor";
+	String KEY_HIGHLIGHT_TRACKED_ITEMS = "highlightTrackedItems";
+	String KEY_HIGHLIGHT_COLOR = "highlightColor";
+	String KEY_GLOW_EFFECT = "glowEffect";
 	String KEY_GE_INTEGRATION = "geIntegration";
 	String KEY_GE_FOCUS_PANEL = "geFocusPanel";
 
-	String KEY_SHOW_SCREEN_OVERLAY = "showScreenOverlay";
-	String KEY_SCREEN_OVERLAY_ON_TOP = "screenOverlayOnTop";
-
-	String KEY_ADD_CONTEXT_MENU_OPTION = "addContextMenuOption";
-	String KEY_WATCH_ITEM_COLOR = "watchItemColor";
-	String KEY_UNWATCH_ITEM_COLOR = "unwatchItemColor";
-
-	String KEY_LAST_SEEN_VERSION = "lastSeenVersion";
-	String KEY_VERSION_FIRST_SEEN = "versionFirstSeen";
-	String KEY_WHATS_NEW_DISMISSED = "whatsNewDismissed";
-
-	/** Top-level panel behaviour: how often prices refresh, and global toggles. */
+	/** Top-level panel behavior: price refresh, change indicator, and global toggles. */
 	@ConfigSection(
 			name = "Main View Settings",
 			description = "Top-level main view settings",
@@ -82,53 +124,53 @@ public interface PricewatchConfig extends Config
 	)
 	String mainViewSection = "mainView";
 
-	/** What the price line under each watchlist row's name shows. */
+	/** Which columns and rows each tracked-item entry shows in the list. */
 	@ConfigSection(
-			name = "Watched Item Display",
-			description = "Controls the price line under each watched item",
+			name = "Tracked Item Display",
+			description = "Controls what each tracked item row shows",
 			position = 1
 	)
-	String watchedItemSection = "watchedItem";
+	String trackedItemSection = "trackedItem";
 
-	/** Order and visibility of the per-item detail view sections. */
+	/** Placement, format, spacing, and rows of the estimated GE sell-value block. */
+	@ConfigSection(
+			name = "GE Estimates Display",
+			description = "Controls the Estimated GE Sell Value section",
+			position = 2
+	)
+	String geEstimatesSection = "geEstimates";
+
+	/** Context-menu integration, highlight colors/mode, and the glow effect. */
+	@ConfigSection(
+			name = "Tracking",
+			description = "Context menu, highlighting, and tracking behavior",
+			position = 3
+	)
+	String trackingSection = "tracking";
+
+	/** Order, visibility, and contents of the per-item detail view sections. */
 	@ConfigSection(
 			name = "Detailed View",
-			description = "Order and visibility of the item detail view sections",
-			position = 2
+			description = "Order, visibility, and contents of the item detail view sections",
+			position = 4
 	)
 	String detailViewSection = "detailView";
 
-	/** How per-item price alerts are delivered when their conditions come true. */
-	@ConfigSection(
-			name = "Alerts",
-			description = "How per-item price alerts are delivered",
-			position = 3
-	)
-	String alertsSection = "alerts";
-
-	/** The draggable in-game boxes showing selected items' prices. */
+	/** The in-game on-screen overlay of selected tracked items. */
 	@ConfigSection(
 			name = "On-screen Overlay",
-			description = "In-game price boxes for selected watched items",
-			position = 4
-	)
-	String screenOverlaySection = "screenOverlay";
-
-	/** Tying the panel to whatever offer is open on the Grand Exchange. */
-	@ConfigSection(
-			name = "GE Integration",
-			description = "Link the panel to the open Grand Exchange offer",
+			description = "Show selected tracked items as a draggable in-game overlay",
 			position = 5
 	)
-	String geIntegrationSection = "geIntegration";
+	String overlaySection = "overlay";
 
-	/** The right-click menu entry that adds or removes an item from the watchlist. */
+	/** How the open Grand Exchange offer ties into the Pricewatch view. */
 	@ConfigSection(
-			name = "Context Menu",
-			description = "The right-click option for watching an item",
+			name = "GE Integration",
+			description = "How the open Grand Exchange offer ties into the Pricewatch view",
 			position = 6
 	)
-	String contextMenuSection = "contextMenu";
+	String geIntegrationSection = "geIntegration";
 
 	@Range(min = 30)
 	@ConfigItem(
@@ -144,24 +186,23 @@ public interface PricewatchConfig extends Config
 	}
 
 	@ConfigItem(
-			keyName = KEY_PRICE_LINE,
-			name = "Price Line",
-			description = "Which price data the line under the item name shows. None hides the line, "
-					+ "leaving a plain icon and name row.",
-			section = watchedItemSection,
-			position = 0
+			keyName = KEY_PRICE_CHANGE_INDICATOR,
+			name = "Price Change Indicator",
+			description = "How to display the pulse indicator for price changes",
+			section = mainViewSection,
+			position = 1
 	)
-	default TimeWindow priceLine()
+	default PriceIndicatorMode priceChangeIndicator()
 	{
-		return TimeWindow.LIVE;
+		return PriceIndicatorMode.CHANGE;
 	}
 
 	@ConfigItem(
 			keyName = KEY_SHOW_COL_HIGH,
-			name = "Show High",
-			description = "Show the high (instant-buy) price on the price line",
-			section = watchedItemSection,
-			position = 1
+			name = "Show High Value",
+			description = "Show the High column in the tracked items list",
+			section = trackedItemSection,
+			position = 0
 	)
 	default boolean showColHigh()
 	{
@@ -170,10 +211,10 @@ public interface PricewatchConfig extends Config
 
 	@ConfigItem(
 			keyName = KEY_SHOW_COL_LOW,
-			name = "Show Low",
-			description = "Show the low (instant-sell) price on the price line",
-			section = watchedItemSection,
-			position = 2
+			name = "Show Low Value",
+			description = "Show the Low column in the tracked items list",
+			section = trackedItemSection,
+			position = 1
 	)
 	default boolean showColLow()
 	{
@@ -182,10 +223,10 @@ public interface PricewatchConfig extends Config
 
 	@ConfigItem(
 			keyName = KEY_SHOW_COL_AVG,
-			name = "Show Average",
-			description = "Show the average price on the price line",
-			section = watchedItemSection,
-			position = 3
+			name = "Show Avg Value",
+			description = "Show the Avg column in the tracked items list",
+			section = trackedItemSection,
+			position = 2
 	)
 	default boolean showColAvg()
 	{
@@ -195,35 +236,130 @@ public interface PricewatchConfig extends Config
 	@ConfigItem(
 			keyName = KEY_SHOW_COL_VOLUME,
 			name = "Show Volume",
-			description = "Show traded volume on the price line. The Latest window carries no volume, "
-					+ "so pick an averaged window to see a figure.",
-			section = watchedItemSection,
-			position = 4
+			description = "Show the Volume column in the tracked items list",
+			section = trackedItemSection,
+			position = 3
 	)
 	default boolean showColVolume()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+			keyName = KEY_SHOW_QUANTITY_VALUE,
+			name = "Show Quantity Value",
+			description = "Show the quantity value next to the item name",
+			section = trackedItemSection,
+			position = 4
+	)
+	default boolean showQuantityValue()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+			keyName = KEY_ROW_1_DATA,
+			name = "Row 1 Data",
+			description = "Price data shown on the first row. None hides the row.",
+			section = trackedItemSection,
+			position = 5
+	)
+	default TimeWindow row1Data()
+	{
+		return TimeWindow.LIVE;
+	}
+
+	@ConfigItem(
+			keyName = KEY_ROW_2_DATA,
+			name = "Row 2 Data",
+			description = "Price data shown on the second row. None hides the row.",
+			section = trackedItemSection,
+			position = 6
+	)
+	default TimeWindow row2Data()
+	{
+		return TimeWindow.H24;
+	}
+
+	@ConfigItem(
+			keyName = KEY_ROW_3_DATA,
+			name = "Row 3 Data",
+			description = "Price data shown on the third row. None hides the row.",
+			section = trackedItemSection,
+			position = 7
+	)
+	default TimeWindow row3Data()
+	{
+		return TimeWindow.WEEK;
+	}
+
+	@ConfigItem(
+			keyName = KEY_SHOW_ITEM_PROFIT_ROW,
+			name = "Show Profit",
+			description = "Show the Est. Profit row below each tracked item using only that item's cost basis",
+			section = trackedItemSection,
+			position = 8
+	)
+	default boolean showItemProfitRow()
+	{
+		return true;
+	}
+
+	@Range(min = 1)
+	@ConfigItem(
+			keyName = KEY_STALE_PRICE_THRESHOLD,
+			name = "Stale Price (min)",
+			description = "Dim the Ltst high or low when its last trade is older than this many minutes.",
+			section = trackedItemSection,
+			position = 9
+	)
+	default int stalePriceThresholdMinutes()
+	{
+		return 60;
+	}
+
+	@ConfigItem(
+			keyName = KEY_COMPACT_VIEW,
+			name = "Compact View",
+			description = "Show tracked items as compact two-row entries. Toggleable from the tracked list header.",
+			section = trackedItemSection,
+			position = 10
+	)
+	default boolean compactView()
 	{
 		return false;
 	}
 
 	@ConfigItem(
-			keyName = KEY_PRICE_CHANGE_INDICATOR,
-			name = "Price Change Indicator",
-			description = "Color prices green or red as they move. Only the Latest window tracks "
-					+ "movement between refreshes.",
-			section = watchedItemSection,
-			position = 5
+			keyName = KEY_SORT_MODE,
+			name = "Sort By",
+			description = "Order of the tracked items list. Any mode except Manual sorts for display only "
+					+ "and disables drag reordering. Also toggleable from the tracked list header.",
+			section = trackedItemSection,
+			position = 11
 	)
-	default PriceIndicatorMode priceChangeIndicator()
+	default SortMode sortMode()
 	{
-		return PriceIndicatorMode.CHANGE;
+		return SortMode.MANUAL;
 	}
 
-
+	@ConfigItem(
+			keyName = KEY_SORT_REVERSED,
+			name = "Reverse Sort",
+			description = "Reverses the sort direction of the tracked items list (flips each mode's "
+					+ "default ascending/descending order). Also toggleable from the tracked list header.",
+			section = trackedItemSection,
+			position = 12
+	)
+	default boolean sortReversed()
+	{
+		return false;
+	}
 
 	@ConfigItem(
 			keyName = KEY_SHOW_ITEM_VALUES,
-			name = "Show Current Values",
-			description = "Position of the Current Values section, or None to hide it",
+			name = "Show Item Values",
+			description = "Position of the Item Current Values section, or None to hide it",
 			section = detailViewSection,
 			position = 0
 	)
@@ -233,15 +369,27 @@ public interface PricewatchConfig extends Config
 	}
 
 	@ConfigItem(
+			keyName = KEY_SHOW_COLLECTION_VALUES,
+			name = "Show Collection Values",
+			description = "Position of the Collection Current Values section, or None to hide it",
+			section = detailViewSection,
+			position = 1
+	)
+	default SectionSlot showCollectionValues()
+	{
+		return SectionSlot.SECOND;
+	}
+
+	@ConfigItem(
 			keyName = KEY_SHOW_MARKET_INFO,
 			name = "Show Market Info",
 			description = "Position of the Market Info section, or None to hide it",
 			section = detailViewSection,
-			position = 1
+			position = 2
 	)
 	default SectionSlot showMarketInfo()
 	{
-		return SectionSlot.SECOND;
+		return SectionSlot.THIRD;
 	}
 
 	@ConfigItem(
@@ -249,11 +397,11 @@ public interface PricewatchConfig extends Config
 			name = "Show Price Overview",
 			description = "Position of the Price Overview section, or None to hide it",
 			section = detailViewSection,
-			position = 2
+			position = 3
 	)
 	default SectionSlot showPriceOverview()
 	{
-		return SectionSlot.THIRD;
+		return SectionSlot.FOURTH;
 	}
 
 	@ConfigItem(
@@ -261,11 +409,11 @@ public interface PricewatchConfig extends Config
 			name = "Show Price Graph",
 			description = "Position of the Price Graph section, or None to hide it",
 			section = detailViewSection,
-			position = 3
+			position = 4
 	)
 	default SectionSlot showPriceGraph()
 	{
-		return SectionSlot.FOURTH;
+		return SectionSlot.FIFTH;
 	}
 
 	@ConfigItem(
@@ -273,91 +421,246 @@ public interface PricewatchConfig extends Config
 			name = "Show Volume Graph",
 			description = "Position of the Volume Graph section, or None to hide it",
 			section = detailViewSection,
-			position = 4
-	)
-	default SectionSlot showVolumeGraph()
-	{
-		return SectionSlot.FIFTH;
-	}
-
-	@ConfigItem(
-			keyName = KEY_SHOW_ALCH_INFO,
-			name = "Show Alchemy",
-			description = "Position of the Alchemy section, or None to hide it",
-			section = detailViewSection,
 			position = 5
 	)
-	default SectionSlot showAlchInfo()
+	default SectionSlot showVolumeGraph()
 	{
 		return SectionSlot.SIXTH;
 	}
 
 	@ConfigItem(
-			keyName = KEY_SHOW_LINKS,
-			name = "Show Links",
-			description = "Position of the Links section, or None to hide it",
+			keyName = KEY_SHOW_ALCH_INFO,
+			name = "Show Alch Info",
+			description = "Position of the Alchemy Info section, or None to hide it",
 			section = detailViewSection,
 			position = 6
 	)
-	default SectionSlot showLinks()
+	default SectionSlot showAlchInfo()
 	{
 		return SectionSlot.SEVENTH;
 	}
 
 	@ConfigItem(
-			keyName = KEY_SHOW_ALERTS,
-			name = "Show Alerts",
-			description = "Position of the Alerts section, or None to hide it",
+			keyName = KEY_SHOW_NOTIFICATIONS,
+			name = "Show Notifications",
+			description = "Position of the per-item notification rule editor, or None to hide it. "
+					+ "Does not enable or disable notifications — use the \"Notifications\" setting for that.",
 			section = detailViewSection,
 			position = 7
 	)
-	default SectionSlot showAlerts()
+	default SectionSlot showNotifications()
+	{
+		return SectionSlot.NINTH;
+	}
+
+	@ConfigItem(
+			keyName = KEY_SHOW_ITEM_LOG,
+			name = "Show Item Log",
+			description = "Position of the Item Collection Log section, or None to hide it",
+			section = detailViewSection,
+			position = 9
+	)
+	default SectionSlot showItemLog()
+	{
+		return SectionSlot.TENTH;
+	}
+
+	@ConfigItem(
+			keyName = KEY_SHOW_LINKS,
+			name = "Show Links",
+			description = "Position of the Links section (Wiki / Live Prices), or None to hide it",
+			section = detailViewSection,
+			position = 10
+	)
+	default SectionSlot showLinks()
 	{
 		return SectionSlot.EIGHTH;
 	}
 
 	@ConfigItem(
-			keyName = KEY_OVERVIEW_PRESET,
-			name = "Overview Windows",
-			description = "Which time windows the price overview grid shows as rows",
-			section = detailViewSection,
-			position = 8
-	)
-	default OverviewPreset overviewPreset()
-	{
-		return OverviewPreset.STANDARD;
-	}
-
-	@Range(min = 1)
-	@ConfigItem(
-			keyName = KEY_STALE_PRICE_THRESHOLD,
-			name = "Stale After (min)",
-			description = "How old a last-traded time may be before it is dimmed as stale",
-			section = detailViewSection,
-			position = 9
-	)
-	default int stalePriceThresholdMinutes()
-	{
-		return 60;
-	}
-
-	@ConfigItem(
 			keyName = KEY_PRESSURE_WINDOW,
-			name = "Pressure Window",
-			description = "How far back the buy/sell pressure bar looks",
+			name = "Buy/Sell Pressure Window",
+			description = "Look-back period for the Buy/Sell Pressure bar in the Market Info section",
 			section = detailViewSection,
-			position = 10
+			position = 11
 	)
-	default PressureWindow pressureWindow()
+	default PressureWindow buySellPressureWindow()
 	{
 		return PressureWindow.DAY;
 	}
 
 	@ConfigItem(
+			keyName = KEY_PRICE_OVERVIEW_ROWS,
+			name = "Price Overview Rows",
+			description = "How many time-window rows the Price Overview shows. "
+					+ "Recent: 5m, 1h, 12h, 24hr. Standard: 5m, 1h, 24hr, 1wk, 1mo. Detailed: all windows.",
+			section = detailViewSection,
+			position = 10
+	)
+	default OverviewPreset priceOverviewRows()
+	{
+		return OverviewPreset.DETAILED;
+	}
+
+	@ConfigItem(
+			keyName = KEY_AUTO_ADD_ITEMS,
+			name = "Auto Add Items",
+			description = "Automatically add collection-log entries from inventory/bank changes. When off, items "
+					+ "are only tracked once you add them yourself (manual edits still work). The price a change "
+					+ "with no observed source buys in at is set separately by \"Fallback Pricing\".",
+			section = detailViewSection,
+			position = 11
+	)
+	default boolean autoAddItems()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+			keyName = KEY_FALLBACK_PRICING,
+			name = "Fallback Pricing",
+			description = "The price an unknown-source change buys in at — mobile/offline sessions and anything no "
+					+ "detector observed (observed sources like GE offers price themselves). High/Low/Avg use the "
+					+ "latest matching price, Zero buys in at 0.",
+			section = detailViewSection,
+			position = 12
+	)
+	default FallbackPricing fallbackPricing()
+	{
+		return FallbackPricing.AVG;
+	}
+
+	@ConfigItem(
+			keyName = KEY_NOTIFICATION_STYLE,
+			name = "Notifications",
+			description = "Master switch and delivery style for per-item notifications. Set to Off to disable "
+					+ "all item notifications; otherwise use the gear to choose how they are delivered. "
+					+ "Independent of \"Show Notifications\", which only controls where the rule editor appears.",
+			section = detailViewSection,
+			position = 13
+	)
+	default Notification notificationStyle()
+	{
+		return Notification.ON;
+	}
+
+	@ConfigItem(
+			keyName = KEY_SHOW_GE_ESTIMATES,
+			name = "Show GE Estimates Section",
+			description = "Show the Estimated GE Sell Value section",
+			section = geEstimatesSection,
+			position = 0
+	)
+	default boolean showGeEstimates()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+			keyName = KEY_GE_ESTIMATES_POSITION,
+			name = "Position",
+			description = "Top: under the search bar above the tracked items list. "
+					+ "Bottom: below the tracked items list.",
+			section = geEstimatesSection,
+			position = 1
+	)
+	default EstimatesPosition geEstimatesPosition()
+	{
+		return EstimatesPosition.BOTTOM;
+	}
+
+	@ConfigItem(
+			keyName = KEY_GE_ESTIMATES_FORMAT,
+			name = "Price Format",
+			description = "How GE Estimate prices are formatted. Short abbreviates with k/m/b and shows a "
+					+ "full-value tooltip on hover.",
+			section = geEstimatesSection,
+			position = 2
+	)
+	default ValueFormat geEstimatesFormat()
+	{
+		return ValueFormat.FULL;
+	}
+
+	@ConfigItem(
+			keyName = KEY_GE_ESTIMATES_SPACING,
+			name = "Spacing",
+			description = "Vertical spacing of the estimate rows. Default keeps the roomier layout; "
+					+ "Compact tightens the rows to match the tracked items list.",
+			section = geEstimatesSection,
+			position = 3
+	)
+	default EstimatesSpacing geEstimatesSpacing()
+	{
+		return EstimatesSpacing.DEFAULT;
+	}
+
+	@ConfigItem(
+			keyName = KEY_SHOW_EST_HIGH,
+			name = "Show High Estimate",
+			description = "Show the row containing the estimated high value",
+			section = geEstimatesSection,
+			position = 4
+	)
+	default boolean showEstHigh()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+			keyName = KEY_SHOW_EST_LOW,
+			name = "Show Low Estimate",
+			description = "Show the row containing the estimated low value",
+			section = geEstimatesSection,
+			position = 5
+	)
+	default boolean showEstLow()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+			keyName = KEY_SHOW_EST_AVG,
+			name = "Show Avg Estimate",
+			description = "Show the row containing the estimated average value",
+			section = geEstimatesSection,
+			position = 6
+	)
+	default boolean showEstAvg()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+			keyName = KEY_SHOW_EST_PROFIT,
+			name = "Show Profit",
+			description = "Show the row containing the estimated profit",
+			section = geEstimatesSection,
+			position = 7
+	)
+	default boolean showEstProfit()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+			keyName = KEY_SHOW_SESSION,
+			name = "Show Session",
+			description = "Show the row containing the value gained/lost since login",
+			section = geEstimatesSection,
+			position = 8
+	)
+	default boolean showSession()
+	{
+		return true;
+	}
+
+	@ConfigItem(
 			keyName = KEY_ADD_CONTEXT_MENU_OPTION,
-			name = "Right-click Watch Option",
-			description = "Add a \"Watch item\" / \"Unwatch item\" entry to item right-click menus",
-			section = contextMenuSection,
+			name = "Add Context Menu Option",
+			description = "Add a \"Track Item\" / \"Stop Tracking\" entry to right-click menus on the ground, "
+					+ "in the bank, or in the inventory",
+			section = trackingSection,
 			position = 0
 	)
 	default boolean addContextMenuOption()
@@ -366,24 +669,85 @@ public interface PricewatchConfig extends Config
 	}
 
 	@ConfigItem(
-			keyName = KEY_ALERT_STYLE,
-			name = "Alerts",
-			description = "Master switch and delivery style for per-item price alerts. Set to Off to silence "
-					+ "every alert without deleting its rule; otherwise use the gear to choose how they "
-					+ "are delivered. Independent of \"Show Alerts\", which only places the rule editor.",
-			section = alertsSection,
-			position = 0
+			keyName = KEY_SOURCE_PRICING,
+			name = "Source-Based Pricing",
+			description = "Price quantity changes by how they occurred (GE offers, pickups, shops, alchemy...) "
+					+ "as those detectors arrive. Off restores classic pricing: the Auto Add price for "
+					+ "additions and the average price for removals. Activity already in flight when "
+					+ "switched off (an open GE offer, an unrecovered death) still settles as detected.",
+			section = trackingSection,
+			position = 6
 	)
-	default Notification alertStyle()
+	default boolean sourcePricing()
 	{
-		return Notification.ON;
+		return true;
+	}
+
+	@ConfigItem(
+			keyName = KEY_TRACK_ITEM_COLOR,
+			name = "\"Track Item\" Color",
+			description = "Color of the \"Track Item\" context menu entry",
+			section = trackingSection,
+			position = 1
+	)
+	default Color trackItemColor()
+	{
+		return new Color(0xd8, 0xfb, 0xd4);
+	}
+
+	@ConfigItem(
+			keyName = KEY_STOP_TRACKING_COLOR,
+			name = "\"Stop Tracking\" Color",
+			description = "Color of the \"Stop Tracking\" context menu entry",
+			section = trackingSection,
+			position = 2
+	)
+	default Color stopTrackingColor()
+	{
+		return new Color(0xfb, 0xd4, 0xd4);
+	}
+
+	@ConfigItem(
+			keyName = KEY_HIGHLIGHT_TRACKED_ITEMS,
+			name = "Highlight Tracked Items",
+			description = "Where to outline tracked items",
+			section = trackingSection,
+			position = 3
+	)
+	default HighlightMode highlightTrackedItems()
+	{
+		return HighlightMode.GROUND;
+	}
+
+	@ConfigItem(
+			keyName = KEY_HIGHLIGHT_COLOR,
+			name = "Highlight Color",
+			description = "Color used to outline the highlighted tracked item",
+			section = trackingSection,
+			position = 4
+	)
+	default Color highlightColor()
+	{
+		return new Color(0xfb, 0xcd, 0x2b);
+	}
+
+	@ConfigItem(
+			keyName = KEY_GLOW_EFFECT,
+			name = "Glow Effect",
+			description = "Speed of the highlight's breathing/glow effect. Off results in a solid color.",
+			section = trackingSection,
+			position = 5
+	)
+	default GlowSpeed glowEffect()
+	{
+		return GlowSpeed.MEDIUM;
 	}
 
 	@ConfigItem(
 			keyName = KEY_SHOW_SCREEN_OVERLAY,
-			name = "Show On-screen Overlay",
-			description = "Draw in-game price boxes for items flagged onto the overlay",
-			section = screenOverlaySection,
+			name = "Show on Screen",
+			description = "Show the items selected (via the manage view) as a draggable in-game overlay",
+			section = overlaySection,
 			position = 0
 	)
 	default boolean showScreenOverlay()
@@ -392,10 +756,23 @@ public interface PricewatchConfig extends Config
 	}
 
 	@ConfigItem(
+			keyName = KEY_SCREEN_OVERLAY_LAYOUT,
+			name = "Overlay Layout",
+			description = "Compact two-row entries, or a replica of the standard tracked-item row",
+			section = overlaySection,
+			position = 1
+	)
+	default OverlayLayout screenOverlayLayout()
+	{
+		return OverlayLayout.STANDARD;
+	}
+
+	@ConfigItem(
 			keyName = KEY_SCREEN_OVERLAY_ON_TOP,
-			name = "Draw Over Interfaces",
-			description = "Draw the boxes above game interfaces rather than behind them",
-			section = screenOverlaySection,
+			name = "Overlay Always On Top",
+			description = "Keep the overlay above open interfaces. When off, it renders behind windows "
+					+ "like the bank or Grand Exchange.",
+			section = overlaySection,
 			position = 2
 	)
 	default boolean screenOverlayOnTop()
@@ -405,9 +782,9 @@ public interface PricewatchConfig extends Config
 
 	@ConfigItem(
 			keyName = KEY_GE_INTEGRATION,
-			name = "GE Integration",
-			description = "Off; a \"View in Pricewatch\" button on the offer screen; auto-open the offer's item "
-					+ "in the panel; or both.",
+			name = "Interaction",
+			description = "Open the current Grand Exchange offer item in Pricewatch's view-only mode: "
+					+ "via an injected button, automatically, both, or off",
 			section = geIntegrationSection,
 			position = 0
 	)
@@ -418,37 +795,14 @@ public interface PricewatchConfig extends Config
 
 	@ConfigItem(
 			keyName = KEY_GE_FOCUS_PANEL,
-			name = "Focus the Panel",
-			description = "Open and focus the side panel when an offer's item is shown",
+			name = "Force Focus",
+			description = "When a GE offer opens the item in Pricewatch, switch to and focus the Pricewatch "
+					+ "panel. When off, the item is loaded silently (shown next time you open Pricewatch).",
 			section = geIntegrationSection,
 			position = 1
 	)
 	default boolean geFocusPanel()
 	{
 		return true;
-	}
-
-	@ConfigItem(
-			keyName = KEY_WATCH_ITEM_COLOR,
-			name = "\"Watch item\" Color",
-			description = "Color of the \"Watch item\" context menu entry",
-			section = contextMenuSection,
-			position = 1
-	)
-	default Color watchItemColor()
-	{
-		return new Color(0xd8, 0xfb, 0xd4);
-	}
-
-	@ConfigItem(
-			keyName = KEY_UNWATCH_ITEM_COLOR,
-			name = "\"Unwatch item\" Color",
-			description = "Color of the \"Unwatch item\" context menu entry",
-			section = contextMenuSection,
-			position = 2
-	)
-	default Color unwatchItemColor()
-	{
-		return new Color(0xfb, 0xd4, 0xd4);
 	}
 }

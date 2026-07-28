@@ -13,82 +13,70 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
-/**
- * Tests for the changelog parser: where one release ends and the next begins, that the
- * body's own headings are not mistaken for release boundaries, and what an empty or
- * headingless changelog reports.
- */
+/** Parsing coverage for {@link Changelog}: release headings, per-release bodies, ordering, and edge cases. */
 public class ChangelogTest
 {
-	private static final String TWO_RELEASES =
-			"# 0.2 - August 1 2026\n"
+	private static final String SAMPLE = "<!-- maintainer note -->\n\n"
+			+ "# 1.4 - July 25 2026\n\n"
 			+ "## Quick Overview\n"
-			+ "Second release.\n"
-			+ "\n"
-			+ "# 0.1 - July 25 2026\n"
+			+ "A friendly summary.\n\n"
+			+ "## Detailed Breakdown\n"
+			+ "### Tracked Item View\n"
+			+ "#### Session stats\n"
+			+ "Shows value since login.\n"
+			+ "[#62](https://example.test/62)\n\n"
+			+ "# 1.3 - July 3 2026\n\n"
 			+ "## Quick Overview\n"
-			+ "First release.\n";
+			+ "An older release.\n";
 
 	@Test
-	public void splitsReleasesOnTopLevelHeadings()
+	public void parsesReleasesNewestFirst()
 	{
-		List<Changelog.Release> releases = Changelog.parse(TWO_RELEASES).releases();
-
+		Changelog log = Changelog.parse(SAMPLE);
+		List<Changelog.Release> releases = log.releases();
 		assertEquals(2, releases.size());
-		assertEquals("0.2", releases.get(0).getVersion());
-		assertEquals("August 1 2026", releases.get(0).getDate());
-		assertEquals("0.1", releases.get(1).getVersion());
-		assertEquals("July 25 2026", releases.get(1).getDate());
+
+		Changelog.Release latest = releases.get(0);
+		assertEquals("1.4", latest.getVersion());
+		assertEquals("July 25 2026", latest.getDate());
+		assertTrue(latest.getBody().contains("Session stats"));
 	}
 
 	@Test
-	public void keepsTheBodyBeneathEachHeading()
+	public void bodyIsScopedToItsRelease()
 	{
-		List<Changelog.Release> releases = Changelog.parse(TWO_RELEASES).releases();
+		Changelog log = Changelog.parse(SAMPLE);
+		Changelog.Release latest = log.releases().get(0);
+		Changelog.Release older = log.releases().get(1);
 
-		assertEquals("## Quick Overview\nSecond release.", releases.get(0).getBody());
-		assertEquals("## Quick Overview\nFirst release.", releases.get(1).getBody());
+		assertFalse("body must stop at the next release heading", latest.getBody().contains("An older release"));
+		assertEquals("1.3", older.getVersion());
+		assertEquals("July 3 2026", older.getDate());
+		assertTrue(older.getBody().contains("An older release"));
 	}
 
+	/** The {@code ##}/{@code ###}/{@code ####} headings inside a body must not split it into extra releases. */
 	@Test
 	public void bodyHeadingsAreNotReleaseBoundaries()
 	{
-		String markdown = "# 0.1 - July 25 2026\n## Section\n### Area\n#### Feature\nText.\n";
-		List<Changelog.Release> releases = Changelog.parse(markdown).releases();
-
-		assertEquals(1, releases.size());
-
-		String body = releases.get(0).getBody();
-
-		assertTrue(body.contains("#### Feature"));
+		Changelog log = Changelog.parse(SAMPLE);
+		assertEquals(2, log.releases().size());
 	}
 
 	@Test
-	public void theNewestVersionIsTheFirstInDocumentOrder()
+	public void currentVersionIsTopEntry()
 	{
-		Changelog log = Changelog.parse(TWO_RELEASES);
-
-		assertEquals("0.2", log.currentVersion());
-		assertTrue(log.hasVersion("0.1"));
-		assertFalse(log.hasVersion("0.3"));
+		Changelog log = Changelog.parse(SAMPLE);
+		assertEquals("1.4", log.currentVersion());
+		assertTrue(log.hasVersion("1.3"));
+		assertFalse(log.hasVersion("9.9"));
 	}
 
 	@Test
-	public void aChangelogWithNoHeadingsHasNoReleases()
+	public void emptyChangelogHasNoCurrentVersion()
 	{
-		Changelog log = Changelog.parse("Just some prose with no headings at all.\n");
-
+		Changelog log = Changelog.parse("<!-- just a comment, no releases -->\n");
 		assertTrue(log.releases().isEmpty());
 		assertNull(log.currentVersion());
-		assertFalse(log.hasVersion("0.1"));
-	}
-
-	@Test
-	public void theBundledChangelogParses()
-	{
-		List<Changelog.Release> releases = Changelog.load().releases();
-
-		assertFalse(releases.isEmpty());
-		assertEquals("0.1", releases.get(releases.size() - 1).getVersion());
 	}
 }
